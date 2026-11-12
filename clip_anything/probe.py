@@ -1,4 +1,4 @@
-"""ffmpeg/ffprobe discovery, preflight, media probing and the 16 kHz audio pipe."""
+"""ffmpeg/ffprobe discovery, preflight, probing, the 16 kHz audio pipe and the gray proxy pipe."""
 
 from __future__ import annotations
 
@@ -36,6 +36,11 @@ class FFmpegCaps:
     version: tuple[int, int]
     captions: bool  # libass `ass` filter present
     filter_file_flag: str  # "-/filter_complex" (>=7) or "-filter_complex_script"
+    tonemap: bool = False  # `scale` has in_transfer/out_transfer (ffmpeg >= 8 colour management)
+    hwaccel: str = ""  # decoder hwaccel to use for the analysis proxy ("" = software)
+
+
+HDR_TRANSFERS = ("smpte2084", "arib-std-b67")
 
 
 @dataclass(frozen=True)
@@ -53,6 +58,26 @@ class MediaInfo:
     acodec: str = ""
     pix_fmt: str = ""
     color_transfer: str = ""
+    color_primaries: str = ""
+
+    @property
+    def is_hdr(self) -> bool:
+        return self.color_transfer in HDR_TRANSFERS
+
+    @property
+    def display_size(self) -> tuple[int, int]:
+        """(w, h) after ffmpeg's automatic rotation, i.e. what filters see."""
+        if self.rotation in (90, 270):
+            return self.height, self.width
+        return self.width, self.height
+
+    def proxy_size(self, width: int) -> tuple[int, int]:
+        """Proxy (w, h) for `scale=width:h` keeping aspect, both even."""
+        w, h = self.display_size
+        if w <= 0 or h <= 0:
+            return width, width * 9 // 16
+        ph = max(2, int(round(width * h / w / 2)) * 2)
+        return width, ph
 
 
 def _popen_kwargs() -> dict:
@@ -104,7 +129,28 @@ def preflight() -> FFmpegCaps:
     ).stdout
     captions = bool(re.search(r"^\s*\S+\s+ass\s", filters, re.M))
     flag = "-/filter_complex" if version >= (7, 0) else "-filter_complex_script"
-    return FFmpegCaps(ffmpeg, ffprobe, version, captions, flag)
+    tonemap = False
+    if version >= (8, 0):
+        scale_help = subprocess.run(
+            [ffmpeg, "-hide_banner", "-h", "filter=scale"],
+            capture_output=True,
+            text=True,
+            check=False,
+            **_popen_kwargs(),
+        ).stdout
+        tonemap = "in_transfer" in scale_help and "out_primaries" in scale_help
+    hwaccel = ""
+    if platform.system() == "Darwin":  # videotoolbox halves 4K HEVC proxy decode; sw fallback
+        hw = subprocess.run(
+            [ffmpeg, "-hide_banner", "-hwaccels"],
+            capture_output=True,
+            text=True,
+            check=False,
+            **_popen_kwargs(),
+        ).stdout
+        if re.search(r"^videotoolbox$", hw, re.M):
+            hwaccel = "videotoolbox"
+    return FFmpegCaps(ffmpeg, ffprobe, version, captions, flag, tonemap, hwaccel)
 
 
 def _fraction(text: str | None) -> float:
@@ -188,6 +234,7 @@ def probe(path: str | os.PathLike, caps: FFmpegCaps) -> MediaInfo:
         acodec=(a or {}).get("codec_name", "") or "",
         pix_fmt=(v or {}).get("pix_fmt", "") or "",
         color_transfer=(v or {}).get("color_transfer", "") or "",
+        color_primaries=(v or {}).get("color_primaries", "") or "",
     )
 
 
@@ -236,3 +283,70 @@ def audio_pipe(
         rc = proc.wait()
         if rc != 0 and err:
             raise InputError(f"ffmpeg audio decode failed: {err.decode(errors='replace')[:300]}")
+
+
+def video_pipe(
+    info: MediaInfo,
+    caps: FFmpegCaps,
+    fps: float = 5.0,
+    width: int = 320,
+    chunk_frames: int = 150,
+    hwaccel: str | None = None,
+) -> Iterator[bytes]:
+    """Yield raw gray8 frames (chunk_frames per buffer) of a constant-rate `fps` proxy.
+    Each frame is w*h bytes with (w, h) = info.proxy_size(width). Never writes a file."""
+    pw, ph = info.proxy_size(width)
+    frame_bytes = pw * ph
+    chunk_bytes = frame_bytes * max(1, chunk_frames)
+    hw = caps.hwaccel if hwaccel is None else hwaccel
+    attempts = [hw, ""] if hw else [""]
+    last_err = b""
+    for accel in attempts:
+        cmd = [caps.ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error"]
+        if accel:
+            cmd += ["-hwaccel", accel]
+        cmd += [
+            "-i",
+            info.path,
+            "-an",
+            "-sn",
+            "-dn",
+            "-map",
+            "0:v:0",
+            "-vf",
+            f"fps={fps:g},scale={pw}:{ph},format=gray",
+            "-f",
+            "rawvideo",
+            "-",
+        ]
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **_popen_kwargs()
+        )
+        assert proc.stdout is not None
+        produced = 0
+        try:
+            carry = b""
+            while True:
+                buf = proc.stdout.read(chunk_bytes)
+                if not buf:
+                    break
+                buf = carry + buf
+                whole = (len(buf) // frame_bytes) * frame_bytes
+                carry = buf[whole:]
+                if whole:
+                    produced += whole // frame_bytes
+                    yield buf[:whole]
+        finally:
+            proc.stdout.close()
+            err = b""
+            if proc.stderr is not None:
+                err = proc.stderr.read()
+                proc.stderr.close()
+            rc = proc.wait()
+        if rc == 0 or produced > 0:
+            if rc != 0 and err:
+                msg = err.decode(errors="replace")[:300]
+                raise InputError(f"ffmpeg video decode failed: {msg}")
+            return
+        last_err = err  # hwaccel failed before the first frame: retry in software
+    raise InputError(f"ffmpeg video decode failed: {last_err.decode(errors='replace')[:300]}")

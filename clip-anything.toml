@@ -22,3 +22,9 @@ lead_frac = 0.6   # share of the clip before the peak (build-up)
 crf = 20
 preset = "veryfast"
 fade_s = 0.3
+
+[layout]
+facecam = "auto"
+crop = "follow"   # follow the action horizontally, or "center"
+pan_speed = 0.25  # max pan speed, fraction of source width per second
+deadband = 0.06   # ignore target moves smaller than this fraction of crop travel

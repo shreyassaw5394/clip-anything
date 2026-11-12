@@ -113,7 +113,9 @@ def find_peaks(sm: np.ndarray, hop_s: float, opts: ScoringOptions) -> tuple[np.n
     if sm.size == 0 or float(sm.max()) <= 0:
         return np.zeros(0, dtype=int), np.zeros(0)
     distance = max(1, math.ceil(opts.min_gap_s / hop_s))
-    height = float(np.percentile(sm, opts.height_pct))
+    # floor only: prominence + distance do the real selection. A high percentile floor
+    # drops short bursts once sustained events (motion) add mass to the distribution.
+    height = max(opts.min_height, float(np.percentile(sm, opts.height_pct)))
     idx, props = _fp(sm, height=height, prominence=opts.prominence, distance=distance, wlen=240)
     return idx, props.get("prominences", np.zeros(len(idx)))
 

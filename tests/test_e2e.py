@@ -36,18 +36,54 @@ def test_dry_run_finds_all_audio_bursts(synth_video, synth_truth, tmp_path):
     data = json.loads((tmp_path / "report.json").read_text())
     assert data["schema_version"] == 1 and len(data["clips"]) == 6
     assert data["clips"][0]["components"]["loud_rel"] > 0.5
+    assert "video.motion" in data["signals"]["names"] and "video.cx" in data["signals"]["names"]
+
+
+def _motion_hits(report, truth):
+    return [b for b in truth["motion_bursts"] if _covering(report, b["t"] + b["dur"] / 2)]
 
 
 def test_music_bed_still_finds_bursts(synth_music_video, synth_truth, tmp_path):
+    # audio path alone (motion weight off): the bed must not hide the bursts
     opts = Options.from_layers(
         {
             "clips": {"count": 6},
+            "scoring": {"w_motion": 0.0},
             "render": {"out_dir": str(tmp_path), "dry_run": True},
-            "analysis": {"cache": False},
+            "analysis": {"cache_dir": str(tmp_path / "cache")},
         }
     )
     report = run(synth_music_video, opts)
     _assert_all_bursts(report, synth_truth)
+    # full scoring: motion bursts win over bed-masked audio (events sit < 30 s apart, so the
+    # min-gap rule keeps only one of each neighbouring pair); the lone burst at 172 s survives
+    opts = Options.from_layers(
+        {
+            "clips": {"count": 10},
+            "render": {"out_dir": str(tmp_path), "dry_run": True},
+            "analysis": {"cache_dir": str(tmp_path / "cache")},
+        }
+    )
+    report = run(synth_music_video, opts)
+    assert len(_motion_hits(report, synth_truth)) == 4
+    assert _covering(report, 172.0)
+
+
+def test_quiet_audio_picks_motion_bursts(synth_quiet_video, synth_truth, tmp_path):
+    opts = Options.from_layers(
+        {
+            "clips": {"count": 4},
+            "render": {"out_dir": str(tmp_path), "dry_run": True},
+            "analysis": {"cache": False},
+        }
+    )
+    report = run(synth_quiet_video, opts)
+    assert len(report.clips) == 4
+    assert len(_motion_hits(report, synth_truth)) == 4
+    for c in report.clips:
+        assert c.components["motion"] > 0.5
+        assert c.components.get("loud_rel", 0.0) < 0.1
+    assert [s.status for s in report.stages if s.name in ("audio", "video")] == ["ok", "ok"]
 
 
 def test_signal_cache_roundtrip(synth_video, tmp_path):

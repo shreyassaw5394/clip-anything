@@ -21,6 +21,9 @@ class AnalysisOptions:
     sample_rate: int = 16000
     chunk_s: float = 30.0
     baseline_s: float = 60.0
+    proxy_fps: float = 5.0
+    proxy_width: int = 320
+    hwaccel: str = "auto"  # auto | none | <ffmpeg hwaccel name>; analysis proxy decode only
     cache: bool = True
     cache_dir: str | None = None
 
@@ -39,7 +42,8 @@ class ScoringOptions:
     local_window_s: float = 300.0
     smooth_sigma_s: float = 1.0
     prominence: float = 0.1
-    height_pct: float = 90.0
+    height_pct: float = 50.0
+    min_height: float = 0.1
     span_frac: float = 0.35
     # informativeness floors (raw units: dB for audio, abs diff for motion)
     floor_loud_db: float = 6.0
@@ -88,6 +92,12 @@ class VisionOptions:
 @dataclass
 class LayoutOptions:
     facecam: str = "auto"  # auto | off
+    crop: str = "follow"  # follow | center
+    pan_speed: float = 0.25  # max pan, fraction of source width per second
+    deadband: float = 0.06  # ignore target moves smaller than this fraction of crop travel
+    min_cutoff: float = 0.4  # One-Euro min cutoff (Hz)
+    beta: float = 0.02  # One-Euro speed coefficient
+    diffuse_spread: float = 0.24  # median cspread above this = global motion -> centre crop
 
 
 @dataclass
@@ -127,7 +137,10 @@ class Options:
 
     def analysis_fingerprint(self) -> str:
         a = self.analysis
-        return f"v{ANALYSIS_SCHEMA}-hop{a.hop_s}-win{a.window_s}-sr{a.sample_rate}"
+        return (
+            f"v{ANALYSIS_SCHEMA}-hop{a.hop_s}-win{a.window_s}-sr{a.sample_rate}"
+            f"-pfps{a.proxy_fps}-pw{a.proxy_width}"
+        )
 
 
 def _merge(base: dict, layer: dict, path: str) -> None:

@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .config import Options
+from .cropplan import x_expression
 from .events import Event, OnEvent, emit
 from .probe import FFmpegCaps, MediaInfo, _popen_kwargs
 from .report import Clip, Report, Warning
@@ -22,15 +23,29 @@ def clip_filename(stem: str, rank: int, start: float) -> str:
     return f"{safe}_{rank:02d}_{m:02d}-{s:02d}.mp4"
 
 
-def build_graph(clip: Clip, info: MediaInfo, opts: Options, has_audio: bool) -> str:
-    """Centre 9:16 crop (phase 2 swaps in the follow-crop keyframes), scale, fades."""
+def build_graph(
+    clip: Clip, info: MediaInfo, opts: Options, has_audio: bool, caps: FFmpegCaps | None = None
+) -> str:
+    """9:16 crop (centre, or action-following keyframes), scale (+tone-map for HDR), fades."""
     r = opts.render
     dur = clip.end - clip.start
     fade = min(r.fade_s, dur / 4)
     out_st = max(0.0, dur - fade)
+    crop = clip.crop or {}
+    if crop.get("mode") == "follow" and crop.get("keyframes"):
+        x = f"(iw-ow)*clip({x_expression(crop['keyframes'])},0,1)"
+    else:
+        x = "(iw-ow)/2"
+    scale = f"scale={r.width}:{r.height}:force_original_aspect_ratio=decrease:flags=lanczos"
+    if info.is_hdr and caps is not None and caps.tonemap:
+        prim = info.color_primaries or "bt2020"
+        scale += (
+            f":in_transfer={info.color_transfer}:in_primaries={prim}"
+            ":out_transfer=bt709:out_primaries=bt709:intent=perceptual"
+        )
     v = (
-        "[0:v]crop=w='min(iw,ih*9/16)':h=ih:x='(iw-ow)/2':y=0,"
-        f"scale={r.width}:{r.height}:force_original_aspect_ratio=decrease:flags=lanczos,"
+        f"[0:v]crop=w='min(iw,ih*{r.width}/{r.height})':h=ih:x='{x}':y=0,"
+        f"{scale},"
         f"pad={r.width}:{r.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p,"
         "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709,"
         f"fade=t=in:st=0:d={fade:.3f},fade=t=out:st={out_st:.3f}:d={fade:.3f}[v]"
@@ -140,7 +155,7 @@ def render_clip(
     if cancel.is_set():
         clip.status, clip.error = "skipped", "cancelled"
         return clip
-    graph = build_graph(clip, info, opts, info.has_audio)
+    graph = build_graph(clip, info, opts, info.has_audio, caps)
     part = out_path.with_suffix(".part.mp4")
     with tempfile.TemporaryDirectory(prefix="clipany-") as tmp:
         graph_file = "graph.txt"

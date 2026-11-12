@@ -31,3 +31,20 @@ def synth_truth(synth_video) -> dict:
     import json
 
     return json.loads((FIXTURES / "synth.json").read_text())
+
+
+@pytest.fixture(scope="session")
+def synth_quiet_video() -> Path:
+    return ensure(FIXTURES, "quiet")
+
+
+@pytest.fixture(scope="session")
+def synth_square_video() -> Path:
+    return ensure(FIXTURES, "square")
+
+
+@pytest.fixture(scope="session")
+def synth_square_truth(synth_square_video) -> dict:
+    import json
+
+    return json.loads((FIXTURES / "synth_square.json").read_text())
