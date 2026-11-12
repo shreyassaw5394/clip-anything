@@ -16,15 +16,6 @@ from .errors import FFmpegMissing, InputError
 
 EXTRA_PATHS = ["/opt/homebrew/opt/ffmpeg-full/bin", "/usr/local/opt/ffmpeg-full/bin"]
 
-
-def _extra_paths() -> list[str]:
-    """Keg-only ffmpeg-full locations; CLIP_ANYTHING_EXTRA_PATHS overrides (empty = none)."""
-    env = os.environ.get("CLIP_ANYTHING_EXTRA_PATHS")
-    if env is None:
-        return EXTRA_PATHS
-    return [p for p in env.split(os.pathsep) if p]
-
-
 INSTALL_HELP = {
     "Darwin": "brew install ffmpeg        (captions need libass: brew install ffmpeg-full)",
     "Linux": "sudo apt install ffmpeg    (or your distro's package manager)",
@@ -53,16 +44,6 @@ HDR_TRANSFERS = ("smpte2084", "arib-std-b67")
 
 
 @dataclass(frozen=True)
-class AudioStream:
-    index: int  # ordinal among audio streams: -map 0:a:<index>
-    codec: str = ""
-    channels: int = 0
-    sample_rate: int = 0
-    title: str = ""
-    language: str = ""
-
-
-@dataclass(frozen=True)
 class MediaInfo:
     path: str
     duration_s: float
@@ -78,20 +59,10 @@ class MediaInfo:
     pix_fmt: str = ""
     color_transfer: str = ""
     color_primaries: str = ""
-    container: str = ""  # ffprobe format_name (first entry)
-    creation_time: str = ""  # container tag, ISO text, "" when absent
-    audio_streams: tuple[AudioStream, ...] = ()
-    hdr_assumed: bool = False  # 10-bit bt2020 with no transfer tag: treated as PQ, warned
-    duration_measured: bool = False  # container had no duration: measured with a -c copy pass
 
     @property
     def is_hdr(self) -> bool:
         return self.color_transfer in HDR_TRANSFERS
-
-    @property
-    def is_portrait(self) -> bool:
-        w, h = self.display_size
-        return h > w
 
     @property
     def display_size(self) -> tuple[int, int]:
@@ -120,7 +91,7 @@ def _find(name: str) -> str | None:
     found = shutil.which(name)
     if found:
         return found
-    for extra in _extra_paths():
+    for extra in EXTRA_PATHS:
         cand = Path(extra) / name
         if cand.is_file() and os.access(cand, os.X_OK):
             return str(cand)
@@ -138,7 +109,17 @@ def _version_of(ffmpeg: str) -> tuple[int, int]:
     return int(m.group(1)), int(m.group(2))
 
 
-def _has_ass_filter(ffmpeg: str) -> bool:
+def preflight() -> FFmpegCaps:
+    """Locate ffmpeg/ffprobe, check version >= 5, detect the ass filter."""
+    ffmpeg = _find("ffmpeg")
+    ffprobe = _find("ffprobe")
+    if not ffmpeg or not ffprobe:
+        raise FFmpegMissing("ffmpeg/ffprobe not found on PATH", install_help())
+    version = _version_of(ffmpeg)
+    if version < (5, 0):
+        raise FFmpegMissing(
+            f"ffmpeg {version[0]}.{version[1]} is too old (need >= 5.0)", install_help()
+        )
     filters = subprocess.run(
         [ffmpeg, "-hide_banner", "-filters"],
         capture_output=True,
@@ -146,40 +127,7 @@ def _has_ass_filter(ffmpeg: str) -> bool:
         check=False,
         **_popen_kwargs(),
     ).stdout
-    return bool(re.search(r"^\s*\S+\s+ass\s", filters, re.M))
-
-
-def _full_build() -> tuple[str, str] | None:
-    """A keg-only `ffmpeg-full` (brew) with libass, if installed: preferred for captions."""
-    for extra in _extra_paths():
-        f, p = Path(extra) / "ffmpeg", Path(extra) / "ffprobe"
-        if f.is_file() and p.is_file() and os.access(f, os.X_OK):
-            return str(f), str(p)
-    return None
-
-
-def preflight() -> FFmpegCaps:
-    """Locate ffmpeg/ffprobe, check version >= 5, detect the ass filter. When the PATH build
-    lacks libass but a keg-only ffmpeg-full exists, use that one."""
-    ffmpeg = _find("ffmpeg")
-    ffprobe = _find("ffprobe")
-    if not ffmpeg or not ffprobe:
-        raise FFmpegMissing("ffmpeg/ffprobe not found on PATH", install_help())
-    captions = _has_ass_filter(ffmpeg)
-    if not captions:
-        full = _full_build()
-        if (
-            full
-            and full[0] != ffmpeg
-            and _version_of(full[0]) >= (5, 0)
-            and _has_ass_filter(full[0])
-        ):
-            ffmpeg, ffprobe, captions = full[0], full[1], True
-    version = _version_of(ffmpeg)
-    if version < (5, 0):
-        raise FFmpegMissing(
-            f"ffmpeg {version[0]}.{version[1]} is too old (need >= 5.0)", install_help()
-        )
+    captions = bool(re.search(r"^\s*\S+\s+ass\s", filters, re.M))
     flag = "-/filter_complex" if version >= (7, 0) else "-filter_complex_script"
     tonemap = False
     if version >= (8, 0):
@@ -220,55 +168,6 @@ def _fraction(text: str | None) -> float:
         return 0.0
 
 
-TIME_RE = re.compile(rb"time=(\d+):(\d\d):(\d\d(?:\.\d+)?)")
-
-
-def measure_duration(path: str | os.PathLike, caps: FFmpegCaps) -> float:
-    """Duration of a file whose container has none (interrupted OBS mkv, .ts chunk): a
-    `-c copy` pass to null, no decode; the last `time=` on stderr is the answer."""
-    cmd = [
-        caps.ffmpeg,
-        "-nostdin",
-        "-hide_banner",
-        "-loglevel",
-        "info",
-        "-stats",
-        "-i",
-        os.fspath(path),
-        "-map",
-        "0",
-        "-c",
-        "copy",
-        "-f",
-        "null",
-        "-",
-    ]
-    res = subprocess.run(cmd, capture_output=True, check=False, **_popen_kwargs())
-    last = 0.0
-    for m in TIME_RE.finditer(res.stderr):
-        last = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
-    return last
-
-
-def _audio_streams(streams: list[dict]) -> tuple[AudioStream, ...]:
-    out = []
-    for s in streams:
-        if s.get("codec_type") != "audio":
-            continue
-        tags = s.get("tags") or {}
-        out.append(
-            AudioStream(
-                index=len(out),
-                codec=s.get("codec_name", "") or "",
-                channels=int(s.get("channels") or 0),
-                sample_rate=int(s.get("sample_rate") or 0),
-                title=str(tags.get("title") or tags.get("handler_name") or ""),
-                language=str(tags.get("language") or ""),
-            )
-        )
-    return tuple(out)
-
-
 def probe(path: str | os.PathLike, caps: FFmpegCaps) -> MediaInfo:
     p = Path(path)
     if not p.is_file():
@@ -301,10 +200,6 @@ def probe(path: str | os.PathLike, caps: FFmpegCaps) -> MediaInfo:
         duration = _fraction(v.get("duration"))
     if not duration and a is not None:
         duration = _fraction(a.get("duration"))
-    measured = False
-    if duration <= 0:
-        duration = measure_duration(p, caps)
-        measured = True
     if duration <= 0:
         raise InputError(f"could not determine duration of {p.name}")
     rotation = 0
@@ -325,19 +220,6 @@ def probe(path: str | os.PathLike, caps: FFmpegCaps) -> MediaInfo:
                 rotation = int(v["tags"]["rotate"]) % 360
             except ValueError:
                 pass
-    transfer = (v or {}).get("color_transfer", "") or ""
-    pix_fmt = (v or {}).get("pix_fmt", "") or ""
-    primaries = (v or {}).get("color_primaries", "") or ""
-    hdr_assumed = False
-    if (
-        v is not None
-        and transfer in ("", "unknown")
-        and primaries == "bt2020"
-        and re.search(r"p?10|p?12", pix_fmt)
-    ):
-        transfer, hdr_assumed = "smpte2084", True  # HDR metadata lost on remux (webm/mkv)
-    tags = fmt.get("tags") or {}
-    creation = str(tags.get("creation_time") or (v or {}).get("tags", {}).get("creation_time", ""))
     return MediaInfo(
         path=os.fspath(p.resolve()),
         duration_s=duration,
@@ -350,31 +232,10 @@ def probe(path: str | os.PathLike, caps: FFmpegCaps) -> MediaInfo:
         size_bytes=int(fmt.get("size") or p.stat().st_size),
         vcodec=(v or {}).get("codec_name", "") or "",
         acodec=(a or {}).get("codec_name", "") or "",
-        pix_fmt=pix_fmt,
-        color_transfer=transfer,
-        color_primaries=primaries,
-        container=str(fmt.get("format_name", "") or "").split(",")[0],
-        creation_time=creation,
-        audio_streams=_audio_streams(streams),
-        hdr_assumed=hdr_assumed,
-        duration_measured=measured,
+        pix_fmt=(v or {}).get("pix_fmt", "") or "",
+        color_transfer=(v or {}).get("color_transfer", "") or "",
+        color_primaries=(v or {}).get("color_primaries", "") or "",
     )
-
-
-def audio_map_args(track: int | str, n_tracks: int) -> list[str]:
-    """ffmpeg args selecting the analysis audio: a stream ordinal, or "mix" (amix of all
-    tracks), or "mix:0,2" (amix of the listed ordinals)."""
-    if isinstance(track, int):
-        if track < 0 or track >= max(n_tracks, 1):
-            raise InputError(f"audio track {track} does not exist ({n_tracks} audio stream(s))")
-        return ["-map", f"0:a:{track}"]
-    idx = list(range(n_tracks))
-    if track.startswith("mix:"):
-        idx = [int(x) for x in track[4:].split(",") if x.strip()]
-    if len(idx) <= 1:
-        return ["-map", f"0:a:{idx[0] if idx else 0}"]
-    graph = "".join(f"[0:a:{i}]" for i in idx) + f"amix=inputs={len(idx)}:duration=longest[a]"
-    return ["-filter_complex", graph, "-map", "[a]"]
 
 
 def audio_pipe(
@@ -383,20 +244,19 @@ def audio_pipe(
     sample_rate: int = 16000,
     chunk_s: float = 30.0,
     start_s: float = 0.0,
-    duration_s: float | None = None,
-    track: int | str = 0,
-    n_tracks: int = 1,
 ) -> Iterator[bytes]:
-    """Yield s16le mono PCM chunks from ffmpeg without loading the whole file. `-ss` (and
-    `-t`) go before `-i`; `track` selects the stream or the amix of several."""
+    """Yield s16le mono PCM chunks from ffmpeg without loading the whole file."""
     cmd = [caps.ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error"]
     if start_s > 0:
         cmd += ["-ss", f"{start_s:.3f}"]
-    if duration_s is not None:
-        cmd += ["-t", f"{duration_s:.3f}"]
-    cmd += ["-i", os.fspath(path), "-vn", "-sn", "-dn"]
-    cmd += audio_map_args(track, n_tracks)
     cmd += [
+        "-i",
+        os.fspath(path),
+        "-vn",
+        "-sn",
+        "-dn",
+        "-map",
+        "0:a:0",
         "-ac",
         "1",
         "-ar",
@@ -432,8 +292,6 @@ def video_pipe(
     width: int = 320,
     chunk_frames: int = 150,
     hwaccel: str | None = None,
-    start_s: float = 0.0,
-    duration_s: float | None = None,
 ) -> Iterator[bytes]:
     """Yield raw gray8 frames (chunk_frames per buffer) of a constant-rate `fps` proxy.
     Each frame is w*h bytes with (w, h) = info.proxy_size(width). Never writes a file."""
@@ -447,10 +305,6 @@ def video_pipe(
         cmd = [caps.ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error"]
         if accel:
             cmd += ["-hwaccel", accel]
-        if start_s > 0:
-            cmd += ["-ss", f"{start_s:.3f}"]
-        if duration_s is not None:
-            cmd += ["-t", f"{duration_s:.3f}"]
         cmd += [
             "-i",
             info.path,

@@ -1,18 +1,12 @@
 """Streaming visual features per 0.5 s hop from a gray 320 px / 5 fps proxy.
 
 Raw signals (normalisation is scoring's job):
-  video.motion      mean |frame diff| over the window (0..255); windows holding a cut take
-                    the median motion of their cut-free neighbours (finalize): cuts are not
-                    motion, they are their own small bonus
+  video.motion      mean |frame diff| over the window (0..255)
   video.hist_delta  max persistent histogram distance in the window (0..1); flashes removed
   video.cut         hist_delta where it exceeds an adaptive threshold, else 0 (finalize)
   video.flash       max single-frame brightness spike (jump up then back) in the window
   video.cx          centre of motion mass, x fraction 0..1 of proxy width; NaN when motion weak
   video.cspread     x spread of the motion mass (std, 0..~0.29); high = diffuse/global motion
-  video.still       mean fraction of pixels with |diff| <= STILL_DIFF (static card detector)
-  video.stroke      mean fraction of changed pixels (diff > CHANGE_DIFF) that are thin strokes
-                    (removed by a 3x3 opening): text/HUD counters, not moving objects.
-                    Frames with no changed pixels count as 1.0 (nothing but noise).
 """
 
 from __future__ import annotations
@@ -23,14 +17,11 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-EXTRACTOR_VERSION = 4
+EXTRACTOR_VERSION = 1
 HIST_BINS = 32
 EDGE_FRAC = 0.06  # ignore this border fraction for the centroid (HUD, letterbox)
 MOTION_FLOOR = 0.3  # mean abs diff below this: no centroid (diffuse noise is caught by cspread)
 CUT_MIN = 0.30  # persistent histogram distance below this is never a cut
-STILL_DIFF = 2  # |diff| at or below this = unchanged pixel
-CHANGE_DIFF = 20  # |diff| above this = changed pixel (stroke test)
-_OPEN_KERNEL = np.ones((3, 3), np.uint8)
 
 
 @dataclass
@@ -40,8 +31,6 @@ class _Frame:
     bright: float
     cx: float
     cspread: float
-    still: float = 1.0
-    stroke: float = 1.0
 
 
 class VideoExtractor:
@@ -61,8 +50,8 @@ class VideoExtractor:
         self._pending: _Frame | None = None  # needs the next frame to confirm cut vs flash
         self._prev_delta = 0.0
         self._n_frames = 0
-        # per-frame confirmed rows (motion, cut_persist, flash, cx, cspread, still, stroke)
-        self._rows: list[tuple[float, float, float, float, float, float, float]] = []
+        # per-frame confirmed rows (motion, cut_persist, flash, cx, cspread)
+        self._rows: list[tuple[float, float, float, float, float]] = []
         x0 = int(round(width * EDGE_FRAC))
         y0 = int(round(height * EDGE_FRAC))
         self._mask = np.zeros((height, width), dtype=np.float32)
@@ -101,15 +90,6 @@ class VideoExtractor:
         diff = cv2.absdiff(frames.reshape(k * self.h, self.w), prev.reshape(k * self.h, self.w))
         diff = diff.reshape(k, self.h, self.w)
         motion = diff.reshape(k, -1).sum(axis=1, dtype=np.uint32) / float(hw)
-        still = (diff <= STILL_DIFF).reshape(k, -1).sum(axis=1) / float(hw)
-        # stroke test on a 2x2 subsample: 1-2 px text strokes vanish under a 3x3 opening,
-        # moving objects survive; 4x cheaper than full resolution
-        changed = (diff[:, ::2, ::2] > CHANGE_DIFF).astype(np.uint8)
-        changed = np.ascontiguousarray(changed.reshape(-1, changed.shape[2]))
-        opened = cv2.morphologyEx(changed, cv2.MORPH_OPEN, _OPEN_KERNEL)
-        n_changed = changed.reshape(k, -1).sum(axis=1, dtype=np.int64)
-        n_thin = (changed & (opened == 0)).reshape(k, -1).sum(axis=1, dtype=np.int64)
-        stroke = np.where(n_changed > 0, n_thin / np.maximum(n_changed, 1), 1.0)
         bc = np.sqrt(hist_cur * prev_hist).sum(axis=1)
         delta = np.sqrt(np.maximum(0.0, 1.0 - bc))
         # centroid: squared diff (motion >> noise) inside the edge mask, summed per column
@@ -127,15 +107,7 @@ class VideoExtractor:
             spread[ok] = np.sqrt(np.maximum(0.0, m2 - m1 * m1))
         for i in range(k):
             self._push(
-                _Frame(
-                    float(motion[i]),
-                    float(delta[i]),
-                    float(bright[i]),
-                    cx[i],
-                    spread[i],
-                    float(still[i]),
-                    float(stroke[i]),
-                )
+                _Frame(float(motion[i]), float(delta[i]), float(bright[i]), cx[i], spread[i])
             )
         self._prev = frames[-1]
         self._prev_hist = hist_cur[-1]
@@ -143,7 +115,7 @@ class VideoExtractor:
     def finish(self) -> None:
         if self._pending is not None:
             p = self._pending
-            self._rows.append((p.motion, p.hist_delta, 0.0, p.cx, p.cspread, p.still, p.stroke))
+            self._rows.append((p.motion, p.hist_delta, 0.0, p.cx, p.cspread))
             self._pending = None
 
     def _push(self, row: _Frame) -> None:
@@ -162,14 +134,14 @@ class VideoExtractor:
                 self._suppress_next = True
                 if up > 8.0 and back < -0.5 * up:
                     flash = min(p.hist_delta, row.hist_delta)
-            self._rows.append((p.motion, persist, flash, p.cx, p.cspread, p.still, p.stroke))
+            self._rows.append((p.motion, persist, flash, p.cx, p.cspread))
         self._prev_bright2 = self._prev_bright
         self._prev_bright = row.bright
         self._pending = row
 
     def result(self, duration_s: float) -> dict[str, np.ndarray]:
         n = int(np.ceil(duration_s / self.hop_s)) if duration_s > 0 else 0
-        rows = np.asarray(self._rows, dtype=np.float32).reshape(-1, 7)
+        rows = np.asarray(self._rows, dtype=np.float32).reshape(-1, 5)
         k = np.arange(rows.shape[0])
         win = np.floor(k / self.fps / self.hop_s).astype(int)
         n = max(n, int(win.max()) + 1 if win.size else 0)
@@ -179,16 +151,12 @@ class VideoExtractor:
             "video.flash": np.zeros(n, np.float32),
             "video.cx": np.full(n, np.nan, np.float32),
             "video.cspread": np.full(n, np.nan, np.float32),
-            "video.still": np.ones(n, np.float32),
-            "video.stroke": np.ones(n, np.float32),
         }
         if rows.size == 0:
             return out
         counts = np.bincount(win, minlength=n).astype(np.float32)
         nz = counts > 0
         out["video.motion"][nz] = np.bincount(win, rows[:, 0], n)[nz] / counts[nz]
-        out["video.still"][nz] = np.bincount(win, rows[:, 5], n)[nz] / counts[nz]
-        out["video.stroke"][nz] = np.bincount(win, rows[:, 6], n)[nz] / counts[nz]
         np.maximum.at(out["video.hist_delta"], win, rows[:, 1])
         np.maximum.at(out["video.flash"], win, rows[:, 2])
         valid = np.isfinite(rows[:, 3])
@@ -216,17 +184,6 @@ def finalize(arrays: dict[str, np.ndarray]) -> None:
     mad = float(np.median(np.abs(hd - med)))
     thr = max(CUT_MIN, med + 6.0 * 1.4826 * mad)
     arrays["video.cut"] = np.where(hd > thr, hd, 0.0).astype(np.float32)
-    # the cut frame's diff is huge but it is not motion: give a cut window the median motion
-    # of its cut-free neighbours (+-2 windows), so a hard cut into a static card scores 0
-    motion = arrays.get("video.motion")
-    if motion is not None and motion.size == hd.size:
-        is_cut = arrays["video.cut"] > 0
-        fixed = motion.copy()
-        for i in np.nonzero(is_cut)[0]:
-            lo, hi = max(0, i - 2), min(hd.size, i + 3)
-            near = motion[lo:hi][~is_cut[lo:hi]]
-            fixed[i] = float(np.median(near)) if near.size else 0.0
-        arrays["video.motion"] = fixed
 
 
 def extract_video(

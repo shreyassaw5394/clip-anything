@@ -28,7 +28,7 @@ clip-anything = "clip_anything.cli:app"
 packages = ["clip_anything"]
 
 [tool.hatch.build.targets.sdist]
-include = ["clip_anything", "README.md", "LICENSE", "NOTICE", "CHANGELOG.md", "clip-anything.toml"]
+include = ["clip_anything", "README.md", "LICENSE", "clip-anything.toml"]
 
 [tool.ruff]
 line-length = 100

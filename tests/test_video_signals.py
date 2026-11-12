@@ -56,17 +56,3 @@ def test_motion_cut_flash_and_centroid():
 def test_empty_input():
     out = extract_video([], FPS, 0.5, W, H, 0.0)
     assert out["video.motion"].size == 0 and out["video.cut"].size == 0
-
-
-def test_still_and_stroke_separate_cards_from_motion():
-    frames = _frames()
-    # 2-4 s: static frame with a thin changing "text" line (1 px strokes)
-    for k in range(int(2 * FPS), int(4 * FPS)):
-        frames[k, 30, 5 + (k % 7) * 6 : 5 + (k % 7) * 6 + 12] = 255
-    out = extract_video([frames.tobytes()], FPS, 0.5, W, H, 20.0)
-    still, stroke = out["video.still"], out["video.stroke"]
-    assert still[4:8].min() > 0.95 and stroke[4:8].min() > 0.8  # card: still + thin strokes
-    assert still[12:16].max() < still[4:8].min()  # the block changes more than the text
-    assert still[0:4].min() > 0.99 and stroke[0:4].min() == 1.0  # nothing changes at all
-    motion = out["video.motion"]
-    assert motion[24] < 3 * motion[22:24].max() + 1.0  # the cut at 12 s is not motion

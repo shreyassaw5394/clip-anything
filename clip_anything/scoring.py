@@ -48,21 +48,15 @@ def _rolling_median(x: np.ndarray, size: int) -> np.ndarray:
     return median_filter(x, size=size, mode="nearest")
 
 
-def robust_normalise(
-    x: np.ndarray, window: int, z_soft: float, eps: float, scale_frac: float = 0.25
-) -> np.ndarray:
-    """tanh(z / z_soft) of the positive rolling z-score, z = (x - rolling median) / sigma.
-    sigma = max(1.4826 * rolling MAD, eps, scale_frac * global (p90 - p50)): a flat stretch
-    (menu, lobby, quiet room) cannot make the next small change look huge."""
+def robust_normalise(x: np.ndarray, window: int, z_cap: float, eps: float) -> np.ndarray:
+    """(x - rolling median) / (1.4826 * rolling MAD + eps), clipped to 0..1 via z_cap."""
     x = np.nan_to_num(x.astype(np.float64), nan=0.0)
     if x.size == 0:
         return x
     med = _rolling_median(x, window)
     mad = _rolling_median(np.abs(x - med), window)
-    p50, p90 = np.percentile(x, [50.0, 90.0])
-    sigma = np.maximum(1.4826 * mad, max(eps, scale_frac * float(p90 - p50)))
-    z = np.maximum(0.0, (x - med) / sigma)
-    return np.tanh(z / z_soft)
+    z = (x - med) / (1.4826 * mad + eps)
+    return np.clip(z / z_cap, 0.0, 1.0)
 
 
 def informativeness(x: np.ndarray, floor: float) -> float:
@@ -76,36 +70,12 @@ def informativeness(x: np.ndarray, floor: float) -> float:
     return float(np.clip(spread / max(floor, 1e-9), 0.0, 1.0))
 
 
-def card_score(sig: Signals, opts: ScoringOptions) -> np.ndarray | None:
-    """0..1 per window: a static card = almost every pixel unchanged, and what does change is
-    thin strokes (text, counters) or nothing. A moving object on a flat background (a blob)
-    is not a card."""
-    still = sig.arrays.get("video.still")
-    if still is None or still.size != sig.n:
-        return None
-    still = np.nan_to_num(still.astype(np.float64), nan=0.0)
-    stroke = sig.arrays.get("video.stroke")
-    stroke = np.ones(sig.n) if stroke is None or stroke.size != sig.n else np.nan_to_num(stroke)
-    # a card is a property of the neighbourhood: a menu page flip or a cursor move inside a
-    # static screen must not look like motion, so judge the rolling median over card_s
-    k = int(opts.card_s / sig.hop_s)
-    still = _rolling_median(still, k)
-    stroke = _rolling_median(stroke.astype(np.float64), k)
-    still_n = np.clip((still - opts.still_lo) / max(1e-6, 0.98 - opts.still_lo), 0.0, 1.0)
-    stroke_n = np.clip((stroke - 0.3) / 0.5, 0.0, 1.0)
-    return still_n * stroke_n
-
-
 def action_score(sig: Signals, opts: ScoringOptions) -> tuple[np.ndarray, dict[str, np.ndarray]]:
-    """Return (score 0..1 per window, per-signal normalised+gated components).
-    score = w_mean * weighted mean + w_max * max + w_agree * sqrt(audio * motion), where the
-    agreement term degrades to the remaining group when one group is absent/uninformative;
-    plus a small cut bonus, times the static-card and intro/outro factors."""
+    """Return (score 0..1 per window, per-signal normalised+gated components)."""
     n = sig.n
     window = int(opts.local_window_s / sig.hop_s)
     comps: dict[str, np.ndarray] = {}
     weights: dict[str, float] = {}
-    gates: dict[str, float] = {}
     for name, wattr, fattr, eps in BASE_SIGNALS:
         raw = sig.arrays.get(name)
         w = float(getattr(opts, wattr))
@@ -114,60 +84,19 @@ def action_score(sig: Signals, opts: ScoringOptions) -> tuple[np.ndarray, dict[s
         gate = informativeness(raw, float(getattr(opts, fattr)))
         if gate <= 0:
             continue
-        s = robust_normalise(raw, window, opts.z_soft, eps, opts.scale_frac) * gate
+        s = robust_normalise(raw, window, opts.z_cap, eps) * gate
         comps[name] = s
         weights[name] = w
-        gates[name] = gate
     if not comps:
         return np.zeros(n), comps
     wsum = sum(weights.values())
     base = sum(weights[k] * comps[k] for k in comps) / wsum
     peak = np.max(np.stack(list(comps.values())), axis=0)
-    groups: list[np.ndarray] = []
-    ggates: list[float] = []
-    for prefix in ("audio.", "video."):
-        names = [k for k in comps if k.startswith(prefix)]
-        if names:
-            stack = np.stack([comps[k] for k in names])
-            gw = np.array([weights[k] for k in names])[:, None]
-            groups.append(0.5 * (stack * gw).sum(axis=0) / gw.sum() + 0.5 * stack.max(axis=0))
-            ggates.append(max(gates[k] for k in names))
-    if len(groups) == 2:
-        # gate-weighted geometric mean: a globally uninformative group (quiet game, static
-        # game) fades out of the term instead of zeroing it
-        ga, gm = ggates
-        agree = np.exp(
-            (ga * np.log(groups[0] + 1e-6) + gm * np.log(groups[1] + 1e-6)) / max(ga + gm, 1e-9)
-        )
-        agree = np.clip(agree, 0.0, 1.0)
-    else:
-        agree = groups[0]
-    wsum3 = opts.w_mean + opts.w_max + opts.w_agree
-    score = (opts.w_mean * base + opts.w_max * peak + opts.w_agree * agree) / max(wsum3, 1e-9)
-    card = card_score(sig, opts)
-    if card is not None and opts.w_card > 0:
-        # a sharp audio onset on a still screen is still an event (a shot while aiming);
-        # sustained loudness on a card (lobby music) is not
-        onset = comps.get("audio.onset")
-        if onset is not None:
-            card = card * (1.0 - onset)
-        score = score * (1.0 - opts.w_card * card)
-        comps["video.card"] = card
+    score = (1.0 - opts.alpha) * base + opts.alpha * peak
     cut = sig.arrays.get("video.cut")
     if cut is not None and cut.size == n and opts.w_cut > 0:
-        from scipy.ndimage import maximum_filter1d
-
         near = np.convolve(np.nan_to_num(cut) > 0, np.ones(5), mode="same") > 0  # +-1 s
-        bonus = opts.w_cut * near
-        if card is not None:  # a cut into or out of a card is a menu transition, not action
-            bonus = bonus * (1.0 - maximum_filter1d(card, size=5, mode="nearest"))
-        score = score + bonus
-    if opts.edge_s > 0 and opts.edge_factor < 1.0:
-        t = sig.t0 + np.arange(n) * sig.hop_s
-        edge = (t < opts.edge_s) | (t > sig.duration_s - opts.edge_s)
-        weak = edge & (agree < opts.edge_agree)
-        score = np.where(weak, score * opts.edge_factor, score)
-    comps["agree"] = agree
+        score = score + opts.w_cut * near
     return np.clip(score, 0.0, 1.0), comps
 
 
@@ -289,13 +218,9 @@ def snap_window(
     return new_start, new_end, info
 
 
-def dedupe(
-    cands: list[Candidate], overlap_frac: float, count: int, min_score: float = 0.0
-) -> list[Candidate]:
+def dedupe(cands: list[Candidate], overlap_frac: float, count: int) -> list[Candidate]:
     kept: list[Candidate] = []
     for c in sorted(cands, key=lambda c: c.score, reverse=True):
-        if c.score < min_score:
-            break
         ok = True
         for k in kept:
             if k.start <= c.peak_t <= k.end or c.start <= k.peak_t <= c.end:
@@ -332,16 +257,13 @@ def select_candidates(
         span = (sig.t0 + a * sig.hop_s, sig.t0 + (b + 1) * sig.hop_s)
         start, end = make_window(peak_t, span, min_s, max_s, sig.duration_s, opts.lead_frac)
         start, end, snap = snap_window(start, end, peak_t, sig, min_s, max_s)
-        # smoothed value for ordering plus the raw value at the peak: a 1 s burst must not
-        # be flattened below the floor by the smoothing alone
-        c_score = 0.5 * float(sm[p]) + 0.5 * float(score[p])
-        components = {k.split(".", 1)[-1]: round(float(v[p]), 4) for k, v in comps.items()}
+        components = {k.split(".", 1)[1]: round(float(v[p]), 4) for k, v in comps.items()}
         features = {k: round(float(v[p]), 4) for k, v in sig.arrays.items() if v.size == sig.n}
         cands.append(
             Candidate(
                 id=cid,
                 peak_t=round(peak_t, 3),
-                score=round(c_score, 4),
+                score=round(float(sm[p]), 4),
                 prominence=round(float(pr), 4),
                 components=components,
                 start=round(start, 3),
@@ -350,17 +272,5 @@ def select_candidates(
                 features=features,
             )
         )
-    top_score = max((c.score for c in cands), default=0.0)
-    floor = max(opts.min_score, opts.min_score_rel * top_score)
-    top = dedupe(cands, opts.overlap_frac, count + 1, floor)
-    if len(top) > 1:
-        # a clip from 0:00 is usually the intro: keep it only when it clearly dominates
-        med = float(np.median([c.score for c in top]))
-        top = [
-            c
-            for c in top
-            if c.start > 0.0
-            or c.peak_t > opts.zero_start_peak_s
-            or c.score >= opts.zero_start_ratio * med
-        ]
-    return top[:count], len(cands), sm
+    top = dedupe(cands, opts.overlap_frac, count)
+    return top, len(cands), sm

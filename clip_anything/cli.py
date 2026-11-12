@@ -27,9 +27,7 @@ def _version(value: bool) -> None:
 
 @app.command()
 def main(
-    video: Annotated[
-        list[Path], typer.Argument(help="Recording(s): file, several files or a folder")
-    ],
+    video: Annotated[Path, typer.Argument(help="Input recording (mp4/mkv/mov...)")],
     count: Annotated[int, typer.Option("--count", "-n", help="Clips to produce")] = 10,
     min_s: Annotated[float, typer.Option("--min", help="Min clip length (s)")] = 15.0,
     max_s: Annotated[float, typer.Option("--max", help="Max clip length (s)")] = 45.0,
@@ -44,27 +42,9 @@ def main(
     no_cache: Annotated[bool, typer.Option("--no-cache", help="Ignore signal cache")] = False,
     force: Annotated[bool, typer.Option("--force", help="Overwrite existing clips")] = False,
     workers: Annotated[int | None, typer.Option("--workers", help="Parallel renders")] = None,
-    yes: Annotated[
-        bool, typer.Option("--yes", "-y", help="Allow the one-time Whisper model download")
-    ] = False,
-    download_models: Annotated[
-        bool, typer.Option("--download-models", help="Same as --yes (download, then continue)")
-    ] = False,
-    whisper_model: Annotated[
-        str | None, typer.Option("--whisper-model", help="tiny.en | base.en | small ...")
-    ] = None,
-    speech_rank: Annotated[
-        bool, typer.Option("--speech-rank", help="Transcribe top 3N candidates, re-rank")
-    ] = False,
     version: Annotated[
         bool | None, typer.Option("--version", callback=_version, is_eager=True)
     ] = None,
-    audio_track: Annotated[
-        str, typer.Option("--audio-track", help="auto | all | game | mic | N (stream number)")
-    ] = "auto",
-    resume: Annotated[
-        bool, typer.Option("--resume/--no-resume", help="Continue an interrupted analysis")
-    ] = True,
 ) -> None:
     """Long gameplay recording in, top N vertical highlight clips + report.json out."""
     from rich.console import Console
@@ -99,19 +79,10 @@ def main(
                 "force": force,
                 "workers": workers,
             },
-            "speech": {
-                "captions": False if no_captions else None,
-                "yes": True if (yes or download_models) else None,
-                "model": whisper_model,
-                "rank": True if speech_rank else None,
-            },
+            "speech": {"captions": False if no_captions else None},
             "vision": {"enabled": vision},
             "layout": {"facecam": facecam, "crop": crop},
-            "analysis": {
-                "cache": False if no_cache else None,
-                "audio_track": audio_track,
-                "resume": resume,
-            },
+            "analysis": {"cache": False if no_cache else None},
         }
         opts = Options.from_layers(file_layer, cli_layer)
     except InputError as exc:
@@ -121,15 +92,6 @@ def main(
         err.print("[red]--min must be > 0 and <= --max[/red]")
         raise typer.Exit(EXIT_BAD_INPUT)
 
-    # Whisper weights: the only network use. Ask once on a TTY, never silently.
-    if (opts.speech.captions or opts.speech.rank) and not opts.speech.yes and not as_json:
-        from .speech import MODEL_SIZES_MB, model_status
-
-        if model_status(opts.speech.model) == "download" and sys.stdin.isatty():
-            mb = MODEL_SIZES_MB.get(opts.speech.model, "?")
-            if typer.confirm(f"Download Whisper {opts.speech.model} (~{mb} MB) for captions?"):
-                opts.speech.yes = True
-
     from .pipeline import run
     from .ui import ProgressUI, print_summary
 
@@ -137,8 +99,7 @@ def main(
     ui = ProgressUI(err, enabled=not as_json)
     try:
         with ui:
-            target = video[0] if len(video) == 1 else video
-            report = run(target, opts, on_event=ui.on_event, cancel=cancel, caps=caps)
+            report = run(video, opts, on_event=ui.on_event, cancel=cancel, caps=caps)
     except KeyboardInterrupt:
         cancel.set()
         err.print("[yellow]cancelled[/yellow]")
@@ -149,17 +110,6 @@ def main(
     except StageError as exc:
         err.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from None
-
-    # --vision: optional local Ollama re-rank + titles. Applied here after the run until the
-    # pipeline grows a `vision` stage of its own (then this block is a no-op).
-    if opts.vision.enabled and not any(s.name == "vision" for s in report.stages):
-        from .vision import rerank_report
-
-        src = Path(str(report.input.get("path", "")))
-        if src.is_file():
-            rerank_report(report, src, caps.ffmpeg, model=opts.vision.model)
-            if report.report_path:
-                report.write(report.report_path)
 
     if as_json:
         json.dump(report.to_dict(), sys.stdout, indent=2)

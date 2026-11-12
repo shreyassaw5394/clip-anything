@@ -35,14 +35,6 @@ class Clip:
     error: str | None = None
     render_s: float | None = None
     snap: dict = field(default_factory=dict)
-    facecam: dict | None = None  # {x,y,w,h fractions, corner, confidence} when layout=facecam
-    captions_path: str | None = None  # sidecar .ass next to the clip (also when libass missing)
-    transcript: str | None = None
-    speech: dict = field(default_factory=dict)  # {words, bonus, phrases, shouts, model_s, reason}
-    source: str | None = None  # the file this clip is cut from (sessions: one of several)
-    source_index: int = 0  # position of that file in the session order
-    session_start: float | None = None  # start/end on the session timeline (== start for 1 file)
-    session_end: float | None = None
 
 
 @dataclass
