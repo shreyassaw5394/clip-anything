@@ -13,7 +13,11 @@ w_rms = 0.3       # absolute loudness
 w_motion = 0.8    # visual motion on the proxy (phase 2)
 w_cut = 0.15      # scene cut within +-1 s of the peak (phase 2)
 w_speech = 0.3    # excitement words (phase 3)
-alpha = 0.5       # 0 = reward signals agreeing, 1 = let one strong signal win
+w_mean = 0.2      # weighted mean of the signals
+w_max = 0.4       # strongest single signal
+w_agree = 0.4     # audio AND motion rising together (a lone signal cannot win alone)
+w_card = 0.8      # penalty for static cards (lobby, menu, loading: still frame + text)
+min_score = 0.2  # --count is a maximum: nothing below max(this, 0.35 x best score) is returned
 prominence = 0.1
 min_gap_s = 30.0
 lead_frac = 0.6   # share of the clip before the peak (build-up)

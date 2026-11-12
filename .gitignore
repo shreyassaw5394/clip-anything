@@ -9,3 +9,4 @@ tests/fixtures/*.json
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+tests/fixtures/inputs/
