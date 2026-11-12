@@ -31,15 +31,17 @@ Rich progress UI: probe → audio → video → score → (vision) → render N/
 10. README + launch assets (after core works)
 
 ## Numbers (update when measured)
-- synthetic video: 3 min, testsrc + 6 injected loud bursts + 4 motion bursts → the top-6 clips must contain all 6 audio bursts (test)
+- synthetic video: 3 min, testsrc + 6 injected loud bursts + 4 motion bursts → the top-6 clips must contain all 6 audio bursts (test) — PASSING; music-bed + VFR variants also 6/6
+- measured 2026-11-12 (M1 Max): audio analysis ≈ 4 s per hour of input (1 h file: audio 3.85 s, score 0.47 s, dry-run 4.4 s); render ≈ 3 s per 17 s clip, 2 workers; synthetic 3 min end to end 10.7 s
 
 ## File ownership right now
 (none)
 
 ## Phase nodes
-- 01-core (steps 1–4) —
+- 01-core (steps 1–4) — DONE 2026-11-12, see phases/01-core/01-01-SUMMARY.md (audio-only; `pipeline.run()` + CLI + render work; cache at .clipanything/<id>/signals.npz; Signals.arrays raw, scoring normalises)
 - 02-video (steps 5–6) —
 - 03-speech-facecam (7–8) —
 - 04-vision-readme (9–10) —
 
 ## Executor log (one line each)
+- 2026-11-12 01-01 executor: steps 1–4 done, 4 commits (b190f21 e403892 3562d30 52534fb), 21 tests green, ruff clean; audio ≈ 4 s/hour; next: 02-video adds video.motion/video.cut/video.cx into Signals.arrays (scoring already consumes video.motion + video.cut)
