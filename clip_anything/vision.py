@@ -291,8 +291,9 @@ def _rename_clip_files(report: Report) -> None:
         if new != old:
             moves.append((old, new))
             c.path = str(new)
-            if c.captions_path and Path(c.captions_path).exists():
-                old_ass = Path(c.captions_path)
+            cap = getattr(c, "captions_path", None)  # sidecar .ass (phase 3 field)
+            if cap and Path(cap).exists():
+                old_ass = Path(cap)
                 new_ass = new.with_suffix(".ass")
                 moves.append((old_ass, new_ass))
                 c.captions_path = str(new_ass)
@@ -315,7 +316,36 @@ def rerank_report(
 ) -> VisionOutcome:
     """Apply the vision pass to report.clips: titles + vision_score always when scored; the
     order (rank) changes only when every clip was scored. Adds a `vision` stage and at most
-    one warning. Rendered files are renamed to the new rank + title slug when present."""
+    one warning. Rendered files are renamed to the new rank + title slug when present.
+    Never raises: an internal error leaves the action-only report plus one warning."""
+    try:
+        return _rerank_report(
+            report,
+            video,
+            ffmpeg,
+            model=model,
+            base=base,
+            on_event=on_event,
+            rename_files=rename_files,
+        )
+    except Exception as exc:  # noqa: BLE001 - optional stage must never kill a run
+        msg = f"{exc.__class__.__name__}: {exc}"
+        report.stages.append(Stage("vision", "failed", 0.0, msg))
+        report.warnings.append(Warning("vision", "failed", f"{msg}; action-only order kept"))
+        emit(on_event, Event("vision", "skipped", message=msg))
+        return VisionOutcome("skipped", None, msg)
+
+
+def _rerank_report(
+    report: Report,
+    video: str | os.PathLike,
+    ffmpeg: str,
+    *,
+    model: str | None,
+    base: str,
+    on_event: OnEvent | None,
+    rename_files: bool,
+) -> VisionOutcome:
     spans = [(c.start, c.end) for c in report.clips]
     out = score_spans(spans, video, ffmpeg, model=model, base=base, on_event=on_event)
     for c, r in zip(report.clips, out.results, strict=True):

@@ -216,3 +216,12 @@ def test_rename_files_two_phase(tmp_path, stub, synth_video):
         ]
     )
     assert all(Path(c.path).exists() for c in r.clips)
+
+
+def test_internal_error_becomes_warning(stub, synth_video, monkeypatch):
+    s = stub(["qwen3-vl:4b"])
+    monkeypatch.setattr(vision, "_rename_clip_files", lambda r: 1 / 0)
+    r = _report(2)
+    out = vision.rerank_report(r, synth_video, preflight().ffmpeg, base=s.base)
+    assert out.status == "skipped" and r.stages[-1].status == "failed"
+    assert "ZeroDivisionError" in r.warnings[-1].message
