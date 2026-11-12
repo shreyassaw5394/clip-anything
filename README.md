@@ -46,6 +46,7 @@ clip-anything <video> [options]
 | `--yes, -y` | | Allow the one-time Whisper model download without the prompt |
 | `--speech-rank` | | Transcribe the top 3N candidates and let excitement words re-rank them (slower) |
 | `--vision` | off | Re-rank the top clips and give them titles with a local Ollama vision model (see below) |
+| `--min-score` | 0.5 | Action bar 0..1 that every clip must clear (audio and motion measured against fixed real-footage levels); `0` ranks the file against itself |
 | `--config` | | TOML file with weights and settings (see below) |
 | `--dry-run` | | Write `report.json` only: what would be clipped and why, no rendering |
 | `--json` | | Print the report to stdout (progress goes to stderr) |
@@ -107,7 +108,8 @@ w_onset = 0.8     # spectral-flux onset sharpness (gunshots, explosions)
 w_motion = 0.8    # visual motion on the proxy
 w_agree = 0.4     # audio AND motion rising together
 w_card = 0.8      # penalty for static cards (lobby, menu, loading)
-min_score = 0.35  # --count is a maximum: nothing below this is returned
+min_score = 0.2     # relative floor: nothing below max(this, 0.35 x best) is returned
+min_evidence = 0.5  # absolute action bar (--min-score): audio AND motion vs real-footage levels
 lead_frac = 0.6   # share of the clip before the peak (build-up)
 
 [layout]
@@ -122,8 +124,21 @@ model = "base.en"
 enabled = false
 ```
 
-<!-- TUNING PLACEHOLDER (02-02): default weights, the lobby/menu card penalty and the eval
-     results on labelled real footage (precision@10, duds@10, recall) go here. -->
+### Default weights and the action bar
+
+The defaults above were tuned on two public-licence recordings with hand-labelled moments: a 40-minute Call of Duty 2 multiplayer match (720p30, 19 labelled spans) and a 74-minute Persona 3 opening (480p60, 33 labelled spans, a turn-based RPG with almost no bursty action). Two mechanisms do most of the work:
+
+- **Static-card penalty** (`w_card`): a window whose proxy frames are nearly still and full of text strokes (lobby, menu, loading, title card) is multiplied by `1 - 0.8 * card`. Loud menu sounds do not rescue it.
+- **Action bar** (`min_evidence`, `--min-score`): every candidate is measured against fixed levels taken from real footage, not against the rest of the file. Audio must be sharp *and* loud (onset plus dB over the rolling baseline) and the picture must show sustained whole-frame motion around the peak. A candidate needs both; one group alone never clears the bar. Below the bar nothing is returned, which is why `--count` is a maximum. `--min-score 0` turns the bar off and ranks the file against itself.
+
+Measured with `scripts/eval.py` (M1 Max, 2026-11-12):
+
+| Recording | Asked | Returned | Duds (menu / text / idle) | Precision@10 |
+|---|---|---|---|---|
+| Call of Duty 2, 40 min | 10 | 10 | 1 (a round-start text card with loud onsets and seven cuts) | 0.80 |
+| Persona 3, 74 min | 10 | 5 | 0 (all five are Tartarus battles) | 5 of 5 returned are real |
+
+Before tuning the same files gave 3 and 8 duds in the top 10. Known misses: a cutscene explosion with music but no audio onset stays below the bar (by design, it has no audio evidence), and 45-second windows in a turn-based game sometimes include a result screen. Analysis alone (no render) ran at 26-47 seconds per hour of footage on these two files; a 3-hour file peaked at 384 MiB of RSS.
 
 ## Library use
 
@@ -142,7 +157,7 @@ for clip in report.ok_clips:
 
 ## Roadmap
 
-- Tuned defaults from labelled real footage (menus, intros and loading screens as duds) <!-- 02-02 fills the measured numbers -->
+- Window shaping for turn-based games (end a clip before the result screen) and a bar calibrated on more than two games
 - Faster analysis on 1080p60 sources (hardware decode for the proxy)
 - Hosted version for people who do not want to run anything locally
 - Direct posting to TikTok, YouTube Shorts and Reels

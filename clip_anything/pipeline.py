@@ -508,8 +508,9 @@ def run(
             Warning(
                 "score",
                 "below_floor",
-                f"{len(top)} of {opts.clips.count} requested: only {len(top)} moments scored "
-                f">= {opts.scoring.min_score:.2f} (--count is a maximum; no filler clips)",
+                f"{len(top)} of {opts.clips.count} requested: only {len(top)} moments cleared "
+                f"the action bar {opts.scoring.min_evidence:.2f} (--count is a maximum, no "
+                f"filler clips; lower --min-score to get more)",
             )
         )
 
