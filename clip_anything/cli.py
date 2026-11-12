@@ -34,6 +34,7 @@ def main(
     out: Annotated[Path, typer.Option("--out", "-o", help="Output folder")] = Path("./clips"),
     no_captions: Annotated[bool, typer.Option("--no-captions", help="Never burn captions")] = False,
     facecam: Annotated[str, typer.Option("--facecam", help="auto | off")] = "auto",
+    crop: Annotated[str, typer.Option("--crop", help="follow the action | center")] = "follow",
     vision: Annotated[bool, typer.Option("--vision/--no-vision", help="Ollama re-rank")] = False,
     config: Annotated[Path | None, typer.Option("--config", help="TOML config")] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Report JSON to stdout")] = False,
@@ -51,6 +52,9 @@ def main(
     err = Console(stderr=True)
     if facecam not in ("auto", "off"):
         err.print("[red]--facecam must be auto or off[/red]")
+        raise typer.Exit(EXIT_BAD_INPUT)
+    if crop not in ("follow", "center"):
+        err.print("[red]--crop must be follow or center[/red]")
         raise typer.Exit(EXIT_BAD_INPUT)
 
     # ffmpeg check first, before importing numpy/scipy
@@ -77,7 +81,7 @@ def main(
             },
             "speech": {"captions": False if no_captions else None},
             "vision": {"enabled": vision},
-            "layout": {"facecam": facecam},
+            "layout": {"facecam": facecam, "crop": crop},
             "analysis": {"cache": False if no_cache else None},
         }
         opts = Options.from_layers(file_layer, cli_layer)

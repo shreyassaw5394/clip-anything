@@ -80,3 +80,65 @@ def test_vfr_source(synth_vfr_video, synth_truth, tmp_path):
     assert c.status == "ok"
     _, _, _, _, dur = _probe(c.path)
     assert abs(dur - c.duration_s) <= 0.15
+
+
+def _white_centre_frac(path, t):
+    """x-centre (fraction of width) of the bright pixels in the frame at t seconds."""
+    import numpy as np
+
+    raw = subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            f"{t:.3f}",
+            "-i",
+            str(path),
+            "-frames:v",
+            "1",
+            "-vf",
+            "scale=108:192,format=gray",
+            "-f",
+            "rawvideo",
+            "-",
+        ],
+        capture_output=True,
+        check=True,
+    ).stdout
+    g = np.frombuffer(raw, np.uint8).reshape(192, 108)
+    cols = (g > 200).sum(axis=0).astype(float)
+    assert cols.sum() > 0, "no white square visible in the rendered frame"
+    return float((cols * (np.arange(108) + 0.5)).sum() / cols.sum() / 108)
+
+
+def test_follow_crop_tracks_moving_square(synth_square_video, synth_square_truth, tmp_path):
+    report = run(synth_square_video, _opts(tmp_path, count=1))
+    assert len(report.clips) == 1
+    c = report.clips[0]
+    assert c.status == "ok" and c.crop["mode"] == "follow", c.crop
+    keys = c.crop["keyframes"]
+    assert len(keys) >= 20
+    # keyframes: crop centre within 8 % of the true square centre once the smoother settled
+    x0, x1 = synth_square_truth["square_x0"], synth_square_truth["square_x1"]
+    d = synth_square_truth["duration_s"]
+    w, cw = 1280, 720 * 9 / 16
+    travel = w - cw
+    errs = []
+    for t_rel, left in keys[6:]:
+        truth = x0 + (x1 - x0) * (c.start + t_rel) / d
+        centre = (left * travel + cw / 2) / w
+        errs.append(abs(centre - truth))
+    assert max(errs) < 0.08, max(errs)
+    # no pan faster than the cap
+    import numpy as np
+
+    k = np.array(keys)
+    speed = np.abs(np.diff(k[:, 1])) * travel / w / np.diff(k[:, 0])
+    assert speed.max() <= 0.25 + 1e-6
+    # rendered output: the square stays near the middle of the vertical frame
+    for t in (2.0, c.duration_s / 2, c.duration_s - 2.0):
+        frac = _white_centre_frac(c.path, t)
+        assert abs(frac - 0.5) < 0.2, (t, frac)

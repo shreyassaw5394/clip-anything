@@ -19,7 +19,7 @@ import numpy as np
 EXTRACTOR_VERSION = 1
 HIST_BINS = 32
 EDGE_FRAC = 0.06  # ignore this border fraction for the centroid (HUD, letterbox)
-MOTION_FLOOR = 1.5  # mean abs diff below this: no reliable centroid
+MOTION_FLOOR = 0.3  # mean abs diff below this: no centroid (diffuse noise is caught by cspread)
 CUT_MIN = 0.30  # persistent histogram distance below this is never a cut
 
 
