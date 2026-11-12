@@ -1,7 +1,9 @@
 """Streaming visual features per 0.5 s hop from a gray 320 px / 5 fps proxy.
 
 Raw signals (normalisation is scoring's job):
-  video.motion      mean |frame diff| over the window (0..255)
+  video.motion      mean |frame diff| over the window (0..255); windows holding a cut take
+                    the median motion of their cut-free neighbours (finalize): cuts are not
+                    motion, they are their own small bonus
   video.hist_delta  max persistent histogram distance in the window (0..1); flashes removed
   video.cut         hist_delta where it exceeds an adaptive threshold, else 0 (finalize)
   video.flash       max single-frame brightness spike (jump up then back) in the window
@@ -21,7 +23,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-EXTRACTOR_VERSION = 2
+EXTRACTOR_VERSION = 4
 HIST_BINS = 32
 EDGE_FRAC = 0.06  # ignore this border fraction for the centroid (HUD, letterbox)
 MOTION_FLOOR = 0.3  # mean abs diff below this: no centroid (diffuse noise is caught by cspread)
@@ -214,6 +216,17 @@ def finalize(arrays: dict[str, np.ndarray]) -> None:
     mad = float(np.median(np.abs(hd - med)))
     thr = max(CUT_MIN, med + 6.0 * 1.4826 * mad)
     arrays["video.cut"] = np.where(hd > thr, hd, 0.0).astype(np.float32)
+    # the cut frame's diff is huge but it is not motion: give a cut window the median motion
+    # of its cut-free neighbours (+-2 windows), so a hard cut into a static card scores 0
+    motion = arrays.get("video.motion")
+    if motion is not None and motion.size == hd.size:
+        is_cut = arrays["video.cut"] > 0
+        fixed = motion.copy()
+        for i in np.nonzero(is_cut)[0]:
+            lo, hi = max(0, i - 2), min(hd.size, i + 3)
+            near = motion[lo:hi][~is_cut[lo:hi]]
+            fixed[i] = float(np.median(near)) if near.size else 0.0
+        arrays["video.motion"] = fixed
 
 
 def extract_video(

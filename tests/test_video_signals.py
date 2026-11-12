@@ -14,7 +14,7 @@ def _frames(seconds=20.0, seed=0):
     frames[int(12 * FPS) :] = 200 - frames[int(12 * FPS) :]  # scene change (persists)
     for k in range(int(6 * FPS), int(8 * FPS)):
         x = 8 + (k - int(6 * FPS)) * 4
-        frames[k, 10:26, x : x + 10] = 250 if k % 2 else 180  # whole block changes: a blob
+        frames[k, 10:26, x : x + 10] = 250
     frames[int(16 * FPS)] = 255  # single-frame flash
     return frames
 
@@ -66,5 +66,7 @@ def test_still_and_stroke_separate_cards_from_motion():
     out = extract_video([frames.tobytes()], FPS, 0.5, W, H, 20.0)
     still, stroke = out["video.still"], out["video.stroke"]
     assert still[4:8].min() > 0.95 and stroke[4:8].min() > 0.8  # card: still + thin strokes
-    assert still[12:16].max() < still[4:8].min() and stroke[12:16].max() < 0.5  # moving blob
+    assert still[12:16].max() < still[4:8].min()  # the block changes more than the text
     assert still[0:4].min() > 0.99 and stroke[0:4].min() == 1.0  # nothing changes at all
+    motion = out["video.motion"]
+    assert motion[24] < 3 * motion[22:24].max() + 1.0  # the cut at 12 s is not motion

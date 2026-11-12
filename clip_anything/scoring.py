@@ -78,7 +78,8 @@ def informativeness(x: np.ndarray, floor: float) -> float:
 
 def card_score(sig: Signals, opts: ScoringOptions) -> np.ndarray | None:
     """0..1 per window: a static card = almost every pixel unchanged, and what does change is
-    thin strokes (text, counters). Pure still frames count fully."""
+    thin strokes (text, counters) or nothing. A moving object on a flat background (a blob)
+    is not a card."""
     still = sig.arrays.get("video.still")
     if still is None or still.size != sig.n:
         return None
@@ -91,8 +92,8 @@ def card_score(sig: Signals, opts: ScoringOptions) -> np.ndarray | None:
     still = _rolling_median(still, k)
     stroke = _rolling_median(stroke.astype(np.float64), k)
     still_n = np.clip((still - opts.still_lo) / max(1e-6, 0.98 - opts.still_lo), 0.0, 1.0)
-    stroke_n = np.clip(stroke / 0.5, 0.0, 1.0)
-    return still_n * (0.6 + 0.4 * stroke_n)
+    stroke_n = np.clip((stroke - 0.3) / 0.5, 0.0, 1.0)
+    return still_n * stroke_n
 
 
 def action_score(sig: Signals, opts: ScoringOptions) -> tuple[np.ndarray, dict[str, np.ndarray]]:
@@ -104,6 +105,7 @@ def action_score(sig: Signals, opts: ScoringOptions) -> tuple[np.ndarray, dict[s
     window = int(opts.local_window_s / sig.hop_s)
     comps: dict[str, np.ndarray] = {}
     weights: dict[str, float] = {}
+    gates: dict[str, float] = {}
     for name, wattr, fattr, eps in BASE_SIGNALS:
         raw = sig.arrays.get(name)
         w = float(getattr(opts, wattr))
@@ -115,29 +117,51 @@ def action_score(sig: Signals, opts: ScoringOptions) -> tuple[np.ndarray, dict[s
         s = robust_normalise(raw, window, opts.z_soft, eps, opts.scale_frac) * gate
         comps[name] = s
         weights[name] = w
+        gates[name] = gate
     if not comps:
         return np.zeros(n), comps
     wsum = sum(weights.values())
     base = sum(weights[k] * comps[k] for k in comps) / wsum
     peak = np.max(np.stack(list(comps.values())), axis=0)
-    groups = []
+    groups: list[np.ndarray] = []
+    ggates: list[float] = []
     for prefix in ("audio.", "video."):
         names = [k for k in comps if k.startswith(prefix)]
         if names:
             stack = np.stack([comps[k] for k in names])
             gw = np.array([weights[k] for k in names])[:, None]
             groups.append(0.5 * (stack * gw).sum(axis=0) / gw.sum() + 0.5 * stack.max(axis=0))
-    agree = np.sqrt(np.prod(np.stack(groups), axis=0)) if len(groups) == 2 else groups[0]
+            ggates.append(max(gates[k] for k in names))
+    if len(groups) == 2:
+        # gate-weighted geometric mean: a globally uninformative group (quiet game, static
+        # game) fades out of the term instead of zeroing it
+        ga, gm = ggates
+        agree = np.exp(
+            (ga * np.log(groups[0] + 1e-6) + gm * np.log(groups[1] + 1e-6)) / max(ga + gm, 1e-9)
+        )
+        agree = np.clip(agree, 0.0, 1.0)
+    else:
+        agree = groups[0]
     wsum3 = opts.w_mean + opts.w_max + opts.w_agree
     score = (opts.w_mean * base + opts.w_max * peak + opts.w_agree * agree) / max(wsum3, 1e-9)
-    cut = sig.arrays.get("video.cut")
-    if cut is not None and cut.size == n and opts.w_cut > 0:
-        near = np.convolve(np.nan_to_num(cut) > 0, np.ones(5), mode="same") > 0  # +-1 s
-        score = score + opts.w_cut * near
     card = card_score(sig, opts)
     if card is not None and opts.w_card > 0:
+        # a sharp audio onset on a still screen is still an event (a shot while aiming);
+        # sustained loudness on a card (lobby music) is not
+        onset = comps.get("audio.onset")
+        if onset is not None:
+            card = card * (1.0 - onset)
         score = score * (1.0 - opts.w_card * card)
         comps["video.card"] = card
+    cut = sig.arrays.get("video.cut")
+    if cut is not None and cut.size == n and opts.w_cut > 0:
+        from scipy.ndimage import maximum_filter1d
+
+        near = np.convolve(np.nan_to_num(cut) > 0, np.ones(5), mode="same") > 0  # +-1 s
+        bonus = opts.w_cut * near
+        if card is not None:  # a cut into or out of a card is a menu transition, not action
+            bonus = bonus * (1.0 - maximum_filter1d(card, size=5, mode="nearest"))
+        score = score + bonus
     if opts.edge_s > 0 and opts.edge_factor < 1.0:
         t = sig.t0 + np.arange(n) * sig.hop_s
         edge = (t < opts.edge_s) | (t > sig.duration_s - opts.edge_s)
@@ -326,9 +350,17 @@ def select_candidates(
                 features=features,
             )
         )
-    top = dedupe(cands, opts.overlap_frac, count + 1, opts.min_score)
+    top_score = max((c.score for c in cands), default=0.0)
+    floor = max(opts.min_score, opts.min_score_rel * top_score)
+    top = dedupe(cands, opts.overlap_frac, count + 1, floor)
     if len(top) > 1:
         # a clip from 0:00 is usually the intro: keep it only when it clearly dominates
         med = float(np.median([c.score for c in top]))
-        top = [c for c in top if c.start > 0.0 or c.score >= opts.zero_start_ratio * med]
+        top = [
+            c
+            for c in top
+            if c.start > 0.0
+            or c.peak_t > opts.zero_start_peak_s
+            or c.score >= opts.zero_start_ratio * med
+        ]
     return top[:count], len(cands), sm
