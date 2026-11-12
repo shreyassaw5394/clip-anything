@@ -36,7 +36,7 @@ Rich progress UI: probe → audio → video → score → (vision) → render N/
 - video pass (audio ∥ video, decode-bound): 74 min 854x480@60 → 24 s/hour; 40 min 720p30 → 42 s/hour; 1080p30 → 54 s/hour (target ≤ 60; 1080p60 would miss, ≈ 100); 4K HEVC HDR 101 s → 20 s with videotoolbox (sw 44 s). Crop expression: 90 keyframes cost 0 s (ffmpeg 9.0.2 spike); quiet-audio 4/4 motion bursts, square followed within 8 %
 
 ## File ownership right now
-(none)
+- 03-01 executor: speech.py, captions.py, facecam.py (new); render.py (layout: facecam vstack + ass append, append-only), cli.py (--no-captions/--facecam/--yes flags, append-only), pipeline.py (speech+captions+facecam stage calls, append-only), config.py ([speech]/[captions] sections, append-only), tests/test_captions.py, tests/test_facecam.py, tests/test_speech.py. NOT scoring.py / video_signals.py
 
 ## Phase nodes
 - 01-core (steps 1–4) — DONE 2026-11-12, see phases/01-core/01-01-SUMMARY.md (audio-only; `pipeline.run()` + CLI + render work; cache at .clipanything/<id>/signals.npz; Signals.arrays raw, scoring normalises)
