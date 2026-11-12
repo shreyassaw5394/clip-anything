@@ -225,3 +225,14 @@ def test_internal_error_becomes_warning(stub, synth_video, monkeypatch):
     out = vision.rerank_report(r, synth_video, preflight().ffmpeg, base=s.base)
     assert out.status == "skipped" and r.stages[-1].status == "failed"
     assert "ZeroDivisionError" in r.warnings[-1].message
+
+
+def test_vision_base_must_be_local(tmp_path):
+    from clip_anything.vision import is_local_base, score_spans
+
+    assert is_local_base("http://127.0.0.1:11434")
+    assert is_local_base("http://localhost:11434")
+    assert not is_local_base("https://127.0.0.1:11434")
+    assert not is_local_base("http://example.com:11434")
+    out = score_spans([(0.0, 1.0)], tmp_path / "x.mp4", "ffmpeg", base="http://example.com")
+    assert out.status == "skipped" and "local" in out.reason

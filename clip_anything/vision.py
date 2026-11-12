@@ -18,6 +18,7 @@ import re
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,6 +36,8 @@ MAX_ITEMS = 30
 FRAMES_PER_CLIP = 4
 VISION_WEIGHT = 0.3
 MAX_CONSECUTIVE_FAILURES = 2
+MAX_RESPONSE_BYTES = 1 << 20  # a tags list or one short JSON reply; anything bigger is a miss
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 PROMPT = (
     "These frames are from one moment of a video game recording. Rate how clip-worthy the "
@@ -66,16 +69,32 @@ class VisionOutcome:
 # ---------------------------------------------------------------- Ollama (localhost only)
 
 
+def is_local_base(base: str) -> bool:
+    """True only for a plain-http URL on this machine; the client never talks anywhere else."""
+    try:
+        u = urllib.parse.urlsplit(base)
+    except ValueError:
+        return False
+    return u.scheme == "http" and (u.hostname or "") in LOCAL_HOSTS
+
+
+def _read_json(resp) -> dict:
+    body = resp.read(MAX_RESPONSE_BYTES + 1)
+    if len(body) > MAX_RESPONSE_BYTES:
+        raise ValueError("response too large")
+    return json.loads(body.decode("utf-8"))
+
+
 def _get_json(url: str, timeout: float) -> dict:
     with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310 (localhost)
-        return json.loads(resp.read().decode("utf-8"))
+        return _read_json(resp)
 
 
 def _post_json(url: str, payload: dict, timeout: float) -> dict:
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (localhost)
-        return json.loads(resp.read().decode("utf-8"))
+        return _read_json(resp)
 
 
 def list_models(base: str = OLLAMA_BASE, timeout: float = TAGS_TIMEOUT_S) -> list[str] | None:
@@ -236,6 +255,9 @@ def score_spans(
     t0 = time.time()
     spans = list(spans)[:max_items]
     results = [VisionScore(error="not scored") for _ in spans]
+    if not is_local_base(base):
+        why = "Ollama base must be a local http URL"
+        return VisionOutcome("skipped", None, why, results=results)
     models = list_models(base)
     if models is None:
         return VisionOutcome(

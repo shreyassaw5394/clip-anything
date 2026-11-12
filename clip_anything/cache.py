@@ -37,6 +37,10 @@ class SignalCache:
         self.id = content_id(video_path)
         root = Path(cache_dir) if cache_dir else Path(video_path).resolve().parent / ".clipanything"
         self.dir = root / self.id
+        # A cache folder that is really a symlink (planted in a shared download folder, say)
+        # would send our writes elsewhere; treat it as no cache rather than follow it.
+        if root.is_symlink() or self.dir.is_symlink():
+            self.enabled = False
 
     def path(self, name: str) -> Path:
         return self.dir / name
