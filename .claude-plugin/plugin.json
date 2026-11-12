@@ -1,0 +1,21 @@
+{
+  "name": "clip-anything",
+  "displayName": "Clip Anything",
+  "version": "0.1.0",
+  "description": "Make highlight clips, shorts and reels from a long gameplay recording with the free, local clip-anything CLI: preview the picks, render, and read why each moment was chosen. Nothing leaves the machine.",
+  "author": {
+    "name": "Shreyas Sawant",
+    "url": "https://github.com/shreyassaw5394"
+  },
+  "repository": "https://github.com/shreyassaw5394/clip-anything",
+  "license": "MIT",
+  "keywords": [
+    "video",
+    "clips",
+    "highlights",
+    "shorts",
+    "gameplay",
+    "ffmpeg",
+    "local"
+  ]
+}

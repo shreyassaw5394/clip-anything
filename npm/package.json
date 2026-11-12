@@ -1,0 +1,42 @@
+{
+  "name": "clip-anything",
+  "version": "0.1.0",
+  "description": "Thin launcher for the clip-anything Python CLI: long gameplay recording in, top N vertical highlight clips out. Runs uvx clip-anything.",
+  "bin": {
+    "clip-anything": "bin/clip-anything.js"
+  },
+  "files": [
+    "bin/clip-anything.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "keywords": [
+    "video",
+    "clips",
+    "highlights",
+    "shorts",
+    "gameplay",
+    "ffmpeg",
+    "launcher"
+  ],
+  "author": "Shreyas Sawant (https://github.com/shreyassaw5394)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shreyassaw5394/clip-anything.git",
+    "directory": "npm"
+  },
+  "homepage": "https://github.com/shreyassaw5394/clip-anything#readme",
+  "bugs": "https://github.com/shreyassaw5394/clip-anything/issues",
+  "scripts": {
+    "test": "node bin/clip-anything.js --version"
+  }
+}

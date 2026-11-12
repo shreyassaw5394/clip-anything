@@ -1,0 +1,13 @@
+{
+  "name": "clip-anything",
+  "owner": { "name": "Shreyas Sawant", "url": "https://github.com/shreyassaw5394" },
+  "description": "Marketplace for Clip Anything: a Claude Code skill that turns a long gameplay recording into vertical highlight clips with the local clip-anything CLI.",
+  "plugins": [
+    {
+      "name": "clip-anything",
+      "source": "./",
+      "description": "Make highlight clips, shorts and reels from a gameplay recording or a folder of recordings. Runs the free, local clip-anything CLI (uvx), shows the picks before rendering, explains each pick from report.json. Nothing is uploaded.",
+      "category": "productivity"
+    }
+  ]
+}
