@@ -180,8 +180,11 @@ def run(
 
     report.timings["total_s"] = round(time.time() - t_start, 3)
     analyze = sum(s.wall_s for s in report.stages if s.name in ("probe", "audio", "video"))
+    fresh = any(s.name in ("audio", "video") and s.status == "ok" for s in report.stages)
     report.timings["analyze_s"] = round(analyze, 3)
-    report.timings["media_x_realtime"] = round(info.duration_s / analyze, 1) if analyze > 0 else 0.0
+    report.timings["media_x_realtime"] = (
+        round(info.duration_s / analyze, 1) if analyze > 0 and fresh else 0.0
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     report.write(out_dir / "report.json")
     return report

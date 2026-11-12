@@ -1,0 +1,24 @@
+# clip-anything config. Load with `clip-anything video.mp4 --config clip-anything.toml`
+# or drop it in the working directory. Every key is optional; these are the defaults.
+
+[clips]
+count = 10
+min_s = 15.0
+max_s = 45.0
+
+[scoring]
+w_loud = 1.0      # loudness above the rolling 60 s baseline
+w_onset = 0.8     # spectral-flux onset sharpness (gunshots, explosions)
+w_rms = 0.3       # absolute loudness
+w_motion = 0.8    # visual motion on the proxy (phase 2)
+w_cut = 0.15      # scene cut within +-1 s of the peak (phase 2)
+w_speech = 0.3    # excitement words (phase 3)
+alpha = 0.5       # 0 = reward signals agreeing, 1 = let one strong signal win
+prominence = 0.1
+min_gap_s = 30.0
+lead_frac = 0.6   # share of the clip before the peak (build-up)
+
+[render]
+crf = 20
+preset = "veryfast"
+fade_s = 0.3

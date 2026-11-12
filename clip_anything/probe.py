@@ -175,7 +175,7 @@ def probe(path: str | os.PathLike, caps: FFmpegCaps) -> MediaInfo:
             except ValueError:
                 pass
     return MediaInfo(
-        path=os.fspath(p),
+        path=os.fspath(p.resolve()),
         duration_s=duration,
         width=width,
         height=height,
