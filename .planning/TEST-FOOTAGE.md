@@ -1,6 +1,6 @@
 # Test footage for tuning the detector (local only)
 
-Status 2026-11-12: a scan of this Mac found NO gameplay recordings (only personal/wedding video, screen recordings, iPhone HEVC HDR clips). Owner must supply GTA 5 footage.
+Status 2026-11-12: a scan of this Mac found no gameplay recordings (only unrelated personal video, screen recordings and iPhone HEVC HDR clips). Owner must supply GTA 5 footage.
 
 ## What we need
 1. One long GTA 5 session, >= 30 min, mixing action (chases, crashes, shootouts, explosions) with quiet driving/idle. Used to tune weights and check false positives in quiet stretches.

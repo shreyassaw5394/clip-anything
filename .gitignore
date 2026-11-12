@@ -10,3 +10,4 @@ tests/fixtures/*.json
 .pytest_cache/
 .ruff_cache/
 tests/fixtures/inputs/
+.DS_Store
