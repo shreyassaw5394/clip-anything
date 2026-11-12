@@ -38,12 +38,11 @@ Rich progress UI: probe → audio → video → score → (vision) → render N/
 - detector 2026-11-12 (02-04): absolute bar (evidence ≥ 0.5, audio AND sustained whole-frame motion vs fixed real-footage levels): COD precision@10 0.70 → 0.80, duds 1 → 1 (round-start text); Persona 7/10 duds → 5 returned of 10 asked, 0 duds, all Tartarus battles; the awakening cutscene explosion is below the bar (no audio onset); alone: COD 40 min 31.6 s (47 s/h), Persona 74 min 32.4 s (26 s/h), load avg 8 from the other executor
 
 - inputs 2026-11-12 (02-03): 3 h synthetic (320x180 5 fps) dry-run 21 s, peak RSS 384 MiB, no leftovers; 74 min + 40 min as one session 92 s; iPhone 4K HLG 25 s (APAC track skipped); 3014x1568@60 VFR no-audio screen recording 3/3 clips; 15-min analysis checkpoints, resume verified
+- launch gate 2026-11-12 (05-01): clean env from the wheel (empty uv cache): `--help` 7.5 s, synthetic 52 s wall, 74-min file first clip 50 s / all 80.6 s; alone: COD 28.7 s (43 s/h), Persona 33.1 s (27 s/h), cached 1.5 s; 3 h 16 s / 363 MiB RSS; network during a captioned run: 0 sockets, 0 connects
 - speech/facecam (M1 Max, base.en int8): model load 0.9 s once; 20 s clip with speech 1.4 s (≈ 14x realtime), silent 0.05–0.15 s; facecam detect 1.3 s/file; captioned 20 s clip render 7.2 s (1 worker), facecam layout 3.2 s
 
 ## File ownership right now
-(03-01 released)
-
-- 04-01 executor: vision.py (new), README.md, LICENSE, NOTICE, CHANGELOG.md, tests/test_vision.py; the `--vision` flag (cli.py append-only: post-run vision apply until the pipeline hook is wired). NOT scoring/probe/render/pipeline internals
+(all released; 05-01 done — owner/main session publishes per .planning/PUBLISH.md)
 
 ## Phase nodes
 - 01-core (steps 1–4) — DONE 2026-11-12, see phases/01-core/01-01-SUMMARY.md (audio-only; `pipeline.run()` + CLI + render work; cache at .clipanything/<id>/signals.npz; Signals.arrays raw, scoring normalises)
@@ -52,6 +51,7 @@ Rich progress UI: probe → audio → video → score → (vision) → render N/
 - 02-03 inputs — DONE 2026-11-12, see phases/02-video/02-03-SUMMARY.md (inputs.py: file/folder/many → one session, creation-time order, clips never cross a file, ≤ 90 s files ranked as whole files; `--audio-track auto|all|game|mic|N` with amix + roles; no-audio/vertical/4:3/21:9/HDR-untagged/no-index/.ts/webm/av1/prores fixtures; `--resume` from <stage>.partial.npz)
 - 03-speech-facecam (7–8) — DONE 2026-11-12, see phases/03-speech-facecam/03-01-SUMMARY.md (speech.py on chosen clips only; captions.py word-synced ASS, sidecar .ass always, burned only with libass; facecam.py static+textured corner + Haar; render ladder full→no captions→no facecam; preflight prefers keg-only ffmpeg-full)
 - 04-vision-readme (9–10) — step 9 + README/packaging DONE 2026-11-12, see phases/04-vision-readme/04-01-SUMMARY.md (vision.py stub-tested, real model unverified; `--vision` applied post-run in cli.py until pipeline.py gets the 3-line hook; README tuning numbers = 02-02 placeholders; demo.gif pending)
+- 05-launch-gate — DONE 2026-11-12, see phases/05-launch-gate/05-01-SUMMARY.md (README numbers filled + Known limits; wheel/sdist clean; clean-env uvx/pipx timed; BENCHMARK re-run: green 3/4/8/10, partial 1/6/7/9/11/12, unmeasured 5, missed 2; assets/demo.gif + example.jpg; PUBLISH.md has the exact publish commands — nothing published)
 
 ## Executor log (one line each)
 - 2026-11-12 01-01 executor: steps 1–4 done, 4 commits (b190f21 e403892 3562d30 52534fb), 21 tests green, ruff clean; audio ≈ 4 s/hour; next: 02-video adds video.motion/video.cut/video.cx into Signals.arrays (scoring already consumes video.motion + video.cut)
@@ -61,3 +61,4 @@ Rich progress UI: probe → audio → video → score → (vision) → render N/
 - 2026-11-12 03-01 executor: steps 7–8 done, commits ffb7e05 (+ fixture follow-up), 17 new tests green, ruff clean; brew ffmpeg-full installed (keg-only) and auto-picked; Whisper base.en cached in ~/.cache/huggingface; no real VOD → Whisper/facecam accuracy unverified; pure HEAD fails 5 scoring tests (02-02 floor vs synth truth) — not touched
 - 2026-11-12 02-04 executor: absolute bar done, commits f26db52 (tree repair: plan commit 3bd5a86 came from the stale main index and dropped 4,277 lines) 2ada4cc b2d409c, full pytest 83 passed 1 skipped, ruff clean; COD 0.80 precision / 1 dud, Persona 5 battles / 0 duds; next: pipeline.py below_floor text should name the bar ("cleared the action bar 0.5; lower --min-score"), window shaping for turn-based games (BENCHMARK #5), bar calibrated on 2 games only (BENCHMARK #2)
 - 2026-11-12 02-03 executor: inputs done, 2 commits (a651bbd 480f5ca), 18 tests green + opt-in 3 h test, ruff clean; signals bit-identical to HEAD; next: 02-02/phase 4 per-file edge rule in scoring (sessions run with edge_s=0), raw-dB tie-break for whole-file candidates, 3 scoring tests already red under the min_score floor (deferred-items.md)
+- 2026-11-12 05-01 executor: launch gate done, commits 21eccae c7042cd + docs; full pytest green, ruff clean; eval re-run COD 0.80/1 dud, Persona 5 returned/0 duds; GTA 6 date confirmed on rockstargames.com/VI (November 19, 2026; README has no date); speech.py silences the cv2/av objc notice + ctranslate2 tip (fd-level); not done: human postable review (#5), third-game calibration (#2), 10-h run, Windows; owner: publish per PUBLISH.md, swap README demo link to the raw GitHub URL before `uv publish`

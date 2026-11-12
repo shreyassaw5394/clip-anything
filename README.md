@@ -6,7 +6,7 @@ A free, local, open-source command line tool. Long gameplay recording in, the to
 
 ![demo: one command on a 40-minute Call of Duty 2 match, three clips in 50 s](assets/demo.gif)
 
-<img src="assets/example.jpg" alt="first frame of the top clip: a 9:16 crop that followed the action" width="180" align="right">
+<img src="assets/example.jpg" alt="first frame of the top clip: a 9:16 crop that followed the action" width="180">
 
 ```
 uvx clip-anything gameplay.mp4
@@ -127,7 +127,7 @@ enabled = false
 
 ### Default weights and the action bar
 
-The defaults above were tuned on two public-licence recordings with hand-labelled moments: a 40-minute Call of Duty 2 multiplayer match (720p30, 19 labelled spans) and a 74-minute Persona 3 opening (480p60, 33 labelled spans, a turn-based RPG with almost no bursty action). Two mechanisms do most of the work:
+The defaults above were tuned on two openly licensed recordings (public domain and CC BY) with hand-labelled moments: a 40-minute Call of Duty 2 multiplayer match (720p30, 19 labelled spans) and a 74-minute Persona 3 opening (480p60, 33 labelled spans, a turn-based RPG with almost no bursty action). Two mechanisms do most of the work:
 
 - **Static-card penalty** (`w_card`): a window whose proxy frames are nearly still and full of text strokes (lobby, menu, loading, title card) is multiplied by `1 - 0.8 * card`. Loud menu sounds do not rescue it.
 - **Action bar** (`min_evidence`, `--min-score`): every candidate is measured against fixed levels taken from real footage, not against the rest of the file. Audio must be sharp *and* loud (onset plus dB over the rolling baseline) and the picture must show sustained whole-frame motion around the peak. A candidate needs both; one group alone never clears the bar. Below the bar nothing is returned, which is why `--count` is a maximum. `--min-score 0` turns the bar off and ranks the file against itself.
@@ -155,6 +155,20 @@ for clip in report.ok_clips:
 ```
 
 `run(video, options, on_event=..., cancel=...)` emits progress events instead of printing and returns the same `Report` that becomes `report.json`.
+
+## Known limits
+
+Measured on 2026-11-12 (see the numbers above); anything not measured is listed as such.
+
+- The action bar was calibrated on two games (an FPS and a turn-based RPG). It is game-agnostic by construction, but it has not been scored on a third, unseen game yet.
+- Top-10 lists on a long match miss moments: on the 40-minute match 8 of 19 labelled moments made the top 10, and one text card still did. Raise `--count` or lower `--min-score` to see more; the report says why each clip was picked.
+- Windows in turn-based games can end on a result screen; clips are not yet shaped around menu transitions.
+- 1080p60 sources analyse at roughly 100 s per hour (decode-bound), above the one-minute goal. 480p-1080p30 sources are well under it.
+- Bounded memory is verified to 3 hours (363 MiB peak); a 10-hour file has not been run.
+- Captions and facecam detection were verified on fixtures and the two recordings above, not on a streamer VOD with a webcam.
+- The `--vision` pass has not been run against a real Ollama model.
+- No human has yet reviewed a batch of clips for "postable without edits"; that review is the next step before claiming it.
+- Windows is untested (the code avoids shell-specific paths, nothing more).
 
 ## Roadmap
 
