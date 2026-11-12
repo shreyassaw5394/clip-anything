@@ -269,14 +269,15 @@ def audio_roles(info: MediaInfo, caps: FFmpegCaps, sample_s: float = 120.0, sr: 
         chunks = audio_pipe(
             info.path, caps, sr, 30.0, 0.0, sample_s, st.index, len(info.audio_streams)
         )
+        decodable = True
         try:
             pcm = b"".join(chunks)
-        except InputError:
-            pcm = b""
+        except InputError:  # e.g. Apple APAC spatial track: ffmpeg has no decoder
+            pcm, decodable = b"", False
         med, active, dyn, high, peak = _track_stats(pcm, sr)
         # near-silent = never above -60 dBFS in the sample (a push-to-talk mic with one
         # shout is kept)
-        role = "silent" if peak < -60.0 else "game"
+        role = "undecodable" if not decodable else ("silent" if peak < -60.0 else "game")
         roles.append(TrackRole(st.index, role, med, active, dyn, high, st.title))
     out: list[TrackRole] = []
     for r in roles:
@@ -284,7 +285,7 @@ def audio_roles(info: MediaInfo, caps: FFmpegCaps, sample_s: float = 120.0, sr: 
         out.append(
             TrackRole(r.index, role, r.rms_db, r.active, r.dynamic_db, r.high_ratio, r.title)
         )
-    active = [r for r in out if r.role != "silent"]
+    active = [r for r in out if r.role not in ("silent", "undecodable")]
     if len(active) >= 2:
         name_hit = [r for r in active if re.search(r"mic|voice|comm|chat", r.title, re.I)]
         if name_hit:
@@ -308,16 +309,17 @@ def choose_track(choice: str, roles: list[TrackRole]) -> tuple[int | str, str]:
     if n == 0:
         return 0, "none"
     if choice in ("", "auto", "all", "mix"):
-        live = [r.index for r in roles if r.role != "silent"] or [roles[0].index]
+        live = [r.index for r in roles if r.role not in ("silent", "undecodable")]
         if choice == "all":
-            live = [r.index for r in roles]
+            live = [r.index for r in roles if r.role != "undecodable"]
+        live = live or [roles[0].index]
         if len(live) == 1:
             return live[0], f"track {live[0]} ({roles[live[0]].role})"
         return "mix:" + ",".join(map(str, live)), "mix of tracks " + ",".join(map(str, live))
     if choice in ("game", "mic"):
         hits = [r.index for r in roles if r.role == choice]
         if not hits and choice == "game":
-            hits = [r.index for r in roles if r.role != "silent"]
+            hits = [r.index for r in roles if r.role not in ("silent", "undecodable")]
         if not hits:
             raise InputError(f"no audio track looks like {choice}; use --audio-track N")
         if len(hits) == 1:
