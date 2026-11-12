@@ -96,6 +96,77 @@ def card_score(sig: Signals, opts: ScoringOptions) -> np.ndarray | None:
     return still_n * stroke_n
 
 
+def _ramp(x: np.ndarray, lo: float, hi: float) -> np.ndarray:
+    return np.clip((x - lo) / max(hi - lo, 1e-9), 0.0, 1.0)
+
+
+def _raw(sig: Signals, name: str, fill: float) -> np.ndarray | None:
+    x = sig.arrays.get(name)
+    if x is None or x.size != sig.n:
+        return None
+    return np.nan_to_num(x.astype(np.float64), nan=fill)
+
+
+def evidence(sig: Signals, opts: ScoringOptions, gates: dict[str, float]) -> dict[str, np.ndarray]:
+    """Absolute action evidence 0..1 per window: raw signals against the fixed reference
+    levels in ScoringOptions (measured on real footage), NOT against this file's own
+    distribution. `gates` are the file-wide informativeness of the base signals: a group
+    the file never exercises (silent recording, static game) drops out instead of vetoing.
+
+    audio  = sharp AND loud (gunfire, impacts) -> 1; a loud swell alone (music) <= loud_alone;
+             a click alone (menu) <= 0.5
+    visual = motion magnitude x frame coverage x spread (a menu animates a small region;
+             a scrolling card changes the whole frame but see the cut/card rules), or a
+             brightness flash (explosion)
+    both   = 0.6 * max + 0.4 * min: one group alone is at most lone_cap."""
+    n = sig.n
+    k = max(1, int(round(opts.evidence_s / sig.hop_s)))
+    from scipy.ndimage import maximum_filter1d
+
+    audio = None
+    onset, loud = _raw(sig, "audio.onset", 0.0), _raw(sig, "audio.loud_rel", 0.0)
+    ga = max((g for k_, g in gates.items() if k_.startswith("audio.")), default=0.0)
+    if (onset is not None or loud is not None) and ga > 0:
+        a_on = _ramp(onset, *opts.ref_onset) if onset is not None else np.zeros(n)
+        a_ld = _ramp(loud, *opts.ref_loud) if loud is not None else np.zeros(n)
+        audio = np.maximum(a_on * (0.5 + 0.5 * a_ld), opts.loud_alone * a_ld)
+    visual = None
+    motion, still = _raw(sig, "video.motion", 0.0), _raw(sig, "video.still", 0.0)
+    gv = max((g for k_, g in gates.items() if k_.startswith("video.")), default=0.0)
+    if motion is not None and gv > 0:
+        m = _ramp(motion, 0.0, opts.ref_motion)
+        if still is not None:
+            cov = _ramp(1.0 - still, *opts.cov_ramp)
+            m = m * ((1.0 - opts.cov_weight) + opts.cov_weight * cov)
+        spread = _raw(sig, "video.cspread", 1.0)
+        if spread is not None:
+            m = m * (0.5 + 0.5 * _ramp(spread, *opts.spread_ramp))
+        visual = m
+    out: dict[str, np.ndarray] = {}
+    if audio is not None:
+        audio = maximum_filter1d(audio, size=2 * k + 1, mode="nearest")
+        out["ev_audio"] = audio
+    if visual is not None:
+        # motion evidence must be SUSTAINED: a page flip, a cut or a cursor jump is one big
+        # frame; combat and a chasing camera keep the whole frame changing for seconds
+        from scipy.ndimage import uniform_filter1d
+
+        kv = max(1, int(round(opts.visual_s / sig.hop_s)))
+        visual = uniform_filter1d(visual, size=2 * kv + 1, mode="nearest")
+        out["ev_visual"] = visual
+    if audio is not None and visual is not None:
+        hi, lo = np.maximum(audio, visual), np.minimum(audio, visual)
+        ev = opts.lone_cap * hi + (1.0 - opts.lone_cap) * lo
+    elif audio is not None:
+        ev = audio
+    elif visual is not None:
+        ev = visual
+    else:
+        ev = np.zeros(n)
+    out["evidence"] = np.clip(ev, 0.0, 1.0)
+    return out
+
+
 def action_score(sig: Signals, opts: ScoringOptions) -> tuple[np.ndarray, dict[str, np.ndarray]]:
     """Return (score 0..1 per window, per-signal normalised+gated components).
     score = w_mean * weighted mean + w_max * max + w_agree * sqrt(audio * motion), where the
@@ -168,6 +239,8 @@ def action_score(sig: Signals, opts: ScoringOptions) -> tuple[np.ndarray, dict[s
         weak = edge & (agree < opts.edge_agree)
         score = np.where(weak, score * opts.edge_factor, score)
     comps["agree"] = agree
+    if opts.min_evidence > 0 or opts.w_evidence > 0:
+        comps.update(evidence(sig, opts, gates))
     return np.clip(score, 0.0, 1.0), comps
 
 
@@ -322,6 +395,9 @@ def select_candidates(
 ) -> tuple[list[Candidate], int, np.ndarray]:
     """Full chain -> (top candidates by score, candidate count before NMS, smoothed score)."""
     score, comps = action_score(sig, opts)
+    # the absolute bar needs both groups: a recording without audio (or without video) has
+    # nothing to agree with, so it is ranked against itself only (the 02-02 behaviour)
+    bar_on = opts.min_evidence > 0 and "ev_audio" in comps and "ev_visual" in comps
     sm = smooth(score, sig.hop_s, opts.smooth_sigma_s)
     idx, prom = find_peaks(sm, sig.hop_s, opts)
     gap = max(1, int(2.0 / sig.hop_s))
@@ -335,6 +411,9 @@ def select_candidates(
         # smoothed value for ordering plus the raw value at the peak: a 1 s burst must not
         # be flattened below the floor by the smoothing alone
         c_score = 0.5 * float(sm[p]) + 0.5 * float(score[p])
+        if bar_on:
+            ev = float(comps["evidence"][p])
+            c_score = c_score * ((1.0 - opts.w_evidence) + opts.w_evidence * ev)
         components = {k.split(".", 1)[-1]: round(float(v[p]), 4) for k, v in comps.items()}
         features = {k: round(float(v[p]), 4) for k, v in sig.arrays.items() if v.size == sig.n}
         cands.append(
@@ -350,6 +429,11 @@ def select_candidates(
                 features=features,
             )
         )
+    # absolute bar first: a window with too little evidence is never a clip, however it
+    # ranks within this file (a menu is not action because the rest of the file is quieter)
+    n_cands = len(cands)
+    if bar_on:
+        cands = [c for c in cands if c.components.get("evidence", 0.0) >= opts.min_evidence]
     top_score = max((c.score for c in cands), default=0.0)
     floor = max(opts.min_score, opts.min_score_rel * top_score)
     top = dedupe(cands, opts.overlap_frac, count + 1, floor)
@@ -363,4 +447,4 @@ def select_candidates(
             or c.peak_t > opts.zero_start_peak_s
             or c.score >= opts.zero_start_ratio * med
         ]
-    return top[:count], len(cands), sm
+    return top[:count], n_cands, sm

@@ -45,10 +45,12 @@ def _motion_hits(report, truth):
 
 def test_music_bed_still_finds_bursts(synth_music_video, synth_truth, tmp_path):
     # audio path alone (motion weight off): the bed must not hide the bursts
+    # the synthetic square moves 5 % of a static frame: by design it sits below the
+    # real-footage action bar (02-04), so these ranking tests run with the bar off
     opts = Options.from_layers(
         {
             "clips": {"count": 6},
-            "scoring": {"w_motion": 0.0},
+            "scoring": {"w_motion": 0.0, "min_evidence": 0.0},
             "render": {"out_dir": str(tmp_path), "dry_run": True},
             "analysis": {"cache_dir": str(tmp_path / "cache")},
         }
@@ -60,6 +62,7 @@ def test_music_bed_still_finds_bursts(synth_music_video, synth_truth, tmp_path):
     opts = Options.from_layers(
         {
             "clips": {"count": 10},
+            "scoring": {"min_evidence": 0.0},
             "render": {"out_dir": str(tmp_path), "dry_run": True},
             "analysis": {"cache_dir": str(tmp_path / "cache")},
         }
@@ -73,6 +76,7 @@ def test_quiet_audio_picks_motion_bursts(synth_quiet_video, synth_truth, tmp_pat
     opts = Options.from_layers(
         {
             "clips": {"count": 4},
+            "scoring": {"min_evidence": 0.0},  # 5 % square: below the real-footage bar
             "render": {"out_dir": str(tmp_path), "dry_run": True},
             "analysis": {"cache": False},
         }

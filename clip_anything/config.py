@@ -71,6 +71,25 @@ class ScoringOptions:
     # returned (absolute floor for filler, relative floor so a file's own scale counts)
     min_score: float = 0.2
     min_score_rel: float = 0.35
+    # absolute bar (02-04): raw signals against FIXED reference levels measured on real
+    # footage, so a score means the same thing on every file. A candidate needs evidence
+    # >= min_evidence to be returned at all; score *= (1 - w_evidence) + w_evidence * evidence.
+    # Reference levels: proxy mean |frame diff| of real combat (COD action 16-45, menus < 12),
+    # spectral-flux onset of gunfire/impacts (0.5-1.4; menu clicks 0.2-0.7), dB above the
+    # rolling baseline (combat 8-50; music swells 2-14). Needs both audio and video: a file
+    # without one is ranked against itself only. min_evidence = 0 turns the bar off.
+    min_evidence: float = 0.5
+    w_evidence: float = 0.5
+    ref_motion: float = 24.0  # proxy mean |diff| that counts as full motion evidence
+    ref_onset: tuple[float, float] = (0.25, 0.7)  # onset ramp lo -> hi
+    ref_loud: tuple[float, float] = (4.0, 16.0)  # loud_rel ramp (dB above baseline)
+    cov_ramp: tuple[float, float] = (0.3, 0.7)  # fraction of the frame changing: lo -> hi
+    cov_weight: float = 0.5  # how much confined motion (menus, dialogue boxes) is discounted
+    spread_ramp: tuple[float, float] = (0.03, 0.08)  # cspread below lo = a cursor, not action
+    loud_alone: float = 0.7  # a loud swell with no onset is at most this much audio evidence
+    lone_cap: float = 0.5  # one group alone (audio or video) is at most this much evidence
+    evidence_s: float = 1.0  # audio/flash evidence at a peak = max over +- this many seconds
+    visual_s: float = 3.0  # motion evidence = mean over +- this many seconds (must persist)
     zero_start_ratio: float = 2.0  # a clip starting at 0:00 needs 2x the median top score
     zero_start_peak_s: float = 10.0  # ...when its peak is inside the first 10 s (an intro)
 
