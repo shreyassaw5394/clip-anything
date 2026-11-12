@@ -171,8 +171,14 @@ def _build_events(out_dir: Path, out: Path, ffmpeg: str, variant: str) -> Path:
         cards = "+".join(f"between(t,{a},{b})" for a, b in LOBBY_CARDS)
         # static card: opaque grey frame; a 160x24 strip of testsrc (moving counters) = text
         extra_inputs = [
-            "-f", "lavfi", "-i", f"color=c=0x303030:s=1280x720:r=30:d={d}",
-            "-f", "lavfi", "-i", f"testsrc=size=160x24:rate=30:duration={d}",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c=0x303030:s=1280x720:r=30:d={d}",
+            "-f",
+            "lavfi",
+            "-i",
+            f"testsrc=size=160x24:rate=30:duration={d}",
         ]
         graph = (
             "[0:v][1:v]overlay=x='(W-w)*mod(t*1.7,1)':y='(H-h)*abs(sin(t*5))'"
@@ -186,8 +192,7 @@ def _build_events(out_dir: Path, out: Path, ffmpeg: str, variant: str) -> Path:
         }
     else:
         bursts = (
-            f"between(t,{AGREE_LOUD},{AGREE_LOUD + 1.0})"
-            f"+between(t,{AGREE_BOTH},{AGREE_BOTH + 1.0})"
+            f"between(t,{AGREE_LOUD},{AGREE_LOUD + 1.0})+between(t,{AGREE_BOTH},{AGREE_BOTH + 1.0})"
         )
         motion = (
             f"between(t,{AGREE_MOTION},{AGREE_MOTION + 2.0})"
@@ -196,8 +201,7 @@ def _build_events(out_dir: Path, out: Path, ffmpeg: str, variant: str) -> Path:
         audio = f"{base}+1.5*(random(0)-0.5)*({bursts})"
         extra_inputs = []
         graph = (
-            "[0:v][1:v]overlay=x='(W-w)*mod(t*1.7,1)':y='(H-h)*abs(sin(t*5))'"
-            f":enable='{motion}'[v]"
+            f"[0:v][1:v]overlay=x='(W-w)*mod(t*1.7,1)':y='(H-h)*abs(sin(t*5))':enable='{motion}'[v]"
         )
         truth = {"loud": AGREE_LOUD, "motion": AGREE_MOTION, "both": AGREE_BOTH}
     cmd = [

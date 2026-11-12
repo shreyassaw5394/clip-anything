@@ -134,8 +134,10 @@ def main(argv: list[str] | None = None) -> int:
     real = _run(video, args.count, out, None)
     clips = real["clips"]
     t = real["timings"]
-    print(f"{video.name}: {len(clips)} clips (count={args.count}), {real['candidates_total']} "
-          f"candidates, analyse {t.get('analyze_s', 0):.1f}s")
+    print(
+        f"{video.name}: {len(clips)} clips (count={args.count}), {real['candidates_total']} "
+        f"candidates, analyse {t.get('analyze_s', 0):.1f}s"
+    )
     actions = [lab for lab in labels if lab["label"] == "action"]
     hit = duds = 0
     print(f"{'#':>2} {'time':>13} {'score':>6}  components  [label]")
@@ -144,15 +146,19 @@ def main(argv: list[str] | None = None) -> int:
         hit += kind == "action"
         duds += kind == "dud"
         comp = " ".join(f"{k}={v:.2f}" for k, v in c["components"].items())
-        print(f"{c['rank']:>2} {_hms(c['start'])}-{_hms(c['end'])} {c['score']:6.3f}  {comp}"
-              f"  [{kind}] {note}")
+        print(
+            f"{c['rank']:>2} {_hms(c['start'])}-{_hms(c['end'])} {c['score']:6.3f}  {comp}"
+            f"  [{kind}] {note}"
+        )
     covered = sum(
         any(_overlap(c["start"], c["end"], a["start"], a["end"]) > 0 for c in clips)
         for a in actions
     )
     n = max(1, len(clips))
-    print(f"precision@{len(clips)}={hit / n:.2f}  duds@{len(clips)}={duds}  "
-          f"recall={covered}/{len(actions)}  unlabelled={len(clips) - hit - duds}")
+    print(
+        f"precision@{len(clips)}={hit / n:.2f}  duds@{len(clips)}={duds}  "
+        f"recall={covered}/{len(actions)}  unlabelled={len(clips) - hit - duds}"
+    )
     for w in real["warnings"]:
         print(f"warning[{w['stage']}/{w['code']}]: {w['message']}")
 

@@ -29,6 +29,8 @@ VIDEO_NAMES = (
     "video.flash",
     "video.cx",
     "video.cspread",
+    "video.still",
+    "video.stroke",
 )
 
 
@@ -245,6 +247,15 @@ def run(
     emit(on_event, Event("score", "done", message=f"{len(top)} clips from {total} candidates"))
     if not top:
         report.warnings.append(Warning("score", "no_peaks", "no action peaks found"))
+    elif len(top) < opts.clips.count:
+        report.warnings.append(
+            Warning(
+                "score",
+                "below_floor",
+                f"{len(top)} of {opts.clips.count} requested: only {len(top)} moments scored "
+                f">= {opts.scoring.min_score:.2f} (--count is a maximum; no filler clips)",
+            )
+        )
 
     out_dir = Path(opts.render.out_dir)
     report.out_dir = str(out_dir)

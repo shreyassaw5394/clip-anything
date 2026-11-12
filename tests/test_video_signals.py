@@ -14,7 +14,7 @@ def _frames(seconds=20.0, seed=0):
     frames[int(12 * FPS) :] = 200 - frames[int(12 * FPS) :]  # scene change (persists)
     for k in range(int(6 * FPS), int(8 * FPS)):
         x = 8 + (k - int(6 * FPS)) * 4
-        frames[k, 10:26, x : x + 10] = 250
+        frames[k, 10:26, x : x + 10] = 250 if k % 2 else 180  # whole block changes: a blob
     frames[int(16 * FPS)] = 255  # single-frame flash
     return frames
 

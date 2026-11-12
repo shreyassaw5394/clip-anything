@@ -158,3 +158,38 @@ def test_help_is_light(flag):
     )
     res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert res.returncode == 0, res.stderr
+
+
+def _dry(video, tmp_path, count):
+    opts = Options.from_layers(
+        {
+            "clips": {"count": count},
+            "render": {"out_dir": str(tmp_path), "dry_run": True},
+            "speech": {"captions": False},
+            "analysis": {"cache": False},
+        }
+    )
+    return run(video, opts)
+
+
+def test_lobby_cards_are_never_picked(synth_lobby_video, tmp_path):
+    truth = json.loads((synth_lobby_video.parent / "synth_lobby.json").read_text())
+    report = _dry(synth_lobby_video, tmp_path, count=5)
+    # --count is a maximum: two real events, no filler from the silent or the loud-music card
+    assert 1 <= len(report.clips) <= 2
+    for c in report.clips:
+        for card in truth["cards"]:
+            assert c.end <= card["start"] or c.start >= card["end"], (c.start, c.end, card)
+    for e in truth["events"]:
+        assert _covering(report, e["t"] + 1.0)
+    assert any(w.code == "below_floor" for w in report.warnings)
+
+
+def test_agreement_ranks_audio_plus_motion_first(synth_agree_video, tmp_path):
+    truth = json.loads((synth_agree_video.parent / "synth_agree.json").read_text())
+    report = _dry(synth_agree_video, tmp_path, count=3)
+    assert report.clips and report.clips[0].start <= truth["both"] <= report.clips[0].end
+    both = report.clips[0]
+    for c in report.clips[1:]:
+        assert c.score < both.score
+    assert both.components["agree"] > 0.8

@@ -99,9 +99,11 @@ class VideoExtractor:
         diff = cv2.absdiff(frames.reshape(k * self.h, self.w), prev.reshape(k * self.h, self.w))
         diff = diff.reshape(k, self.h, self.w)
         motion = diff.reshape(k, -1).sum(axis=1, dtype=np.uint32) / float(hw)
-        flat = diff.reshape(k * self.h, self.w)
-        still = (flat <= STILL_DIFF).reshape(k, -1).sum(axis=1) / float(hw)
-        changed = (flat > CHANGE_DIFF).astype(np.uint8)
+        still = (diff <= STILL_DIFF).reshape(k, -1).sum(axis=1) / float(hw)
+        # stroke test on a 2x2 subsample: 1-2 px text strokes vanish under a 3x3 opening,
+        # moving objects survive; 4x cheaper than full resolution
+        changed = (diff[:, ::2, ::2] > CHANGE_DIFF).astype(np.uint8)
+        changed = np.ascontiguousarray(changed.reshape(-1, changed.shape[2]))
         opened = cv2.morphologyEx(changed, cv2.MORPH_OPEN, _OPEN_KERNEL)
         n_changed = changed.reshape(k, -1).sum(axis=1, dtype=np.int64)
         n_thin = (changed & (opened == 0)).reshape(k, -1).sum(axis=1, dtype=np.int64)
