@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "clip-anything"
+version = "0.1.0"
+description = "Free, local CLI: long gameplay recording in, top N vertical highlight clips out."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=2.0",
+  "scipy>=1.13",
+  "opencv-python-headless>=4.10,<5",
+  "rich>=13",
+  "typer>=0.12",
+]
+
+[project.optional-dependencies]
+captions = ["faster-whisper>=1.1"]
+dev = ["pytest>=8", "ruff"]
+
+[project.scripts]
+clip-anything = "clip_anything.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["clip_anything"]
+
+[tool.hatch.build.targets.sdist]
+include = ["clip_anything", "README.md", "LICENSE", "clip-anything.toml"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
