@@ -43,6 +43,7 @@ class Clip:
     source_index: int = 0  # position of that file in the session order
     session_start: float | None = None  # start/end on the session timeline (== start for 1 file)
     session_end: float | None = None
+    ai: dict | None = None  # --ai: {title, hook, reaction, score, provider, model, ai_generated}
 
 
 @dataclass
