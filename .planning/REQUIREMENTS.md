@@ -52,4 +52,29 @@
 | 16:9 or square outputs | 9:16 only for v1 |
 
 ## Traceability
-(filled by roadmap)
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| CAPT-01 | Phase 3 | Pending |
+| CAPT-02 | Phase 3 | Pending |
+| CAPT-03 | Phase 3 | Pending |
+| CAPT-04 | Phase 3 | Pending |
+| DETECT-01 | Phase 1 | Pending |
+| DETECT-02 | Phase 2 | Pending |
+| DETECT-03 | Phase 2 | Pending |
+| DETECT-04 | Phase 1 | Pending |
+| DETECT-05 | Phase 1 | Pending |
+| DETECT-06 | Phase 2 | Pending |
+| LAUNCH-01 | Phase 1 | Pending |
+| LAUNCH-02 | Phase 4 | Pending |
+| LAUNCH-03 | Phase 1 | Pending |
+| LAUNCH-04 | Phase 5 | Pending |
+| RENDER-01 | Phase 1 | Pending |
+| RENDER-02 | Phase 2 | Pending |
+| RENDER-03 | Phase 1 | Pending |
+| RENDER-04 | Phase 1 | Pending |
+| SETUP-01 | Phase 1 | Pending |
+| SETUP-02 | Phase 1 | Pending |
+| SETUP-03 | Phase 1 | Pending |
+| SETUP-04 | Phase 1 | Pending |
+
+**Coverage:** 22/22 mapped
