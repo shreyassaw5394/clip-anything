@@ -33,15 +33,17 @@ Rich progress UI: probe → audio → video → score → (vision) → render N/
 ## Numbers (update when measured)
 - synthetic video: 3 min, testsrc + 6 injected loud bursts + 4 motion bursts → the top-6 clips must contain all 6 audio bursts (test) — PASSING; music-bed + VFR variants also 6/6
 - measured 2026-11-12 (M1 Max): audio analysis ≈ 4 s per hour of input (1 h file: audio 3.85 s, score 0.47 s, dry-run 4.4 s); render ≈ 3 s per 17 s clip, 2 workers; synthetic 3 min end to end 10.7 s
+- video pass (audio ∥ video, decode-bound): 74 min 854x480@60 → 24 s/hour; 40 min 720p30 → 42 s/hour; 1080p30 → 54 s/hour (target ≤ 60; 1080p60 would miss, ≈ 100); 4K HEVC HDR 101 s → 20 s with videotoolbox (sw 44 s). Crop expression: 90 keyframes cost 0 s (ffmpeg 9.0.2 spike); quiet-audio 4/4 motion bursts, square followed within 8 %
 
 ## File ownership right now
 (none)
 
 ## Phase nodes
 - 01-core (steps 1–4) — DONE 2026-11-12, see phases/01-core/01-01-SUMMARY.md (audio-only; `pipeline.run()` + CLI + render work; cache at .clipanything/<id>/signals.npz; Signals.arrays raw, scoring normalises)
-- 02-video (steps 5–6) —
+- 02-video (steps 5–6) — DONE 2026-11-12, see phases/02-video/02-01-SUMMARY.md (video.motion/cut/flash/cx/cspread in signals.npz; cropplan.py → follow crop expression; HDR tone-map via scale colour management on ffmpeg ≥ 8; --crop follow|center)
 - 03-speech-facecam (7–8) —
 - 04-vision-readme (9–10) —
 
 ## Executor log (one line each)
 - 2026-11-12 01-01 executor: steps 1–4 done, 4 commits (b190f21 e403892 3562d30 52534fb), 21 tests green, ruff clean; audio ≈ 4 s/hour; next: 02-video adds video.motion/video.cut/video.cx into Signals.arrays (scoring already consumes video.motion + video.cut)
+- 2026-11-12 02-01 executor: steps 5–6 done, 3 commits (d9b3e8b 20e3621 c96f489), 31 tests green, ruff clean; analysis 24–54 s/hour (decode-bound); next: 03-speech-facecam appends `ass=` after scale in render.build_graph and vstack over the follow crop; phase 4 must tune motion saturation + menu/intro false positives seen on real footage

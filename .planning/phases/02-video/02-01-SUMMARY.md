@@ -1,0 +1,17 @@
+# 02-01 Summary — Visual signals + action-following crop (steps 5–6) — DONE 2026-11-12
+
+Commits: d9b3e8b visual signals into scoring · 20e3621 follow crop end to end, HDR tone-map, --crop · c96f489 vectorised extractor. 31 pytest green, ruff clean.
+
+Built: `video_signals.py` (gray 320px/5fps proxy via `probe.video_pipe`, never a file; per 0.5 s window: `video.motion` mean |diff|, `video.hist_delta` + `video.cut` (persistent 32-bin Bhattacharyya jump > max(0.30, median+6·MAD); a jump that jumps back is `video.flash`, never a cut), `video.cx` squared-diff x-centroid inside a 6 % edge mask, `video.cspread`). Chunk-invariant, vectorised (cv2.absdiff, bincount histograms, einsum columns): 0.16 ms/frame. `cropplan.py` (pure): NaN fill → median(5) → One-Euro (0.4 Hz, β 0.02) → deadband 6 % → pan cap 0.25 W/s → keyframes every 0.5 s → nested `if(lt(t,..))` crop expression in the filter file. Centre fallback when < 40 % windows have motion, median spread > 0.24 (global motion), portrait source, or `--crop center`. Audio + video pipes run in two threads; both land in the same `signals.npz` (old audio-only cache triggers only the video pass). HDR (smpte2084/arib-std-b67): `scale=...:in_transfer=X:in_primaries=bt2020:out_transfer=bt709:out_primaries=bt709:intent=perceptual` when ffmpeg ≥ 8 exposes it (`caps.tonemap`), else the washed-out warning. `--crop follow|center` CLI + `[layout]` config.
+
+Spike (ffmpeg 9.0.2, 45 s 720p clip): 90-keyframe nested-if x expression costs nothing — `-f null` 0.75 s with and without it; encode 6.79 s (constant 90-term) vs 7.04 s centre; a panning picture costs x264 +3 s. No `sendcmd` needed.
+
+Scoring fix: `find_peaks` height was percentile-90 of the smoothed score; sustained motion events raised it above short audio bursts (76 s burst lost). Now `max(min_height 0.1, p50)`; prominence + 30 s gap do the selection.
+
+Synthetic: base → top-6 = all 6 audio bursts (≥ 3 s build-up). quiet-audio variant → top-4 = the 4 motion bursts, audio components 0. music-bed → audio path alone (w_motion 0) 6/6; full scoring picks 4/4 motion bursts + the lone 172 s burst (events sit 12–19 s apart, min gap 30 s keeps one per pair by design). square fixture (160 px square, 2 %/s) → follow crop, keyframe centre within 8 % of truth after settle, pan ≤ cap, rendered square within 20 % of frame centre at 3 times (visually checked).
+
+HDR iPhone clip (4K HEVC HLG, 101 s, local only): 2/2 clips, 1080x1920 yuv420p bt709, tone-mapped (visibly more contrast than setparams-only), follow crop; analysis 20 s (videotoolbox, auto only for ≥ 4.5 MP HEVC/AV1 — on 720p H.264 videotoolbox was 10x slower than software), render 24 s/clip (4K decode).
+
+Timing (M1 Max, analysis = audio + video, dry-run, no cache): 74 min 854x480@60 H.264 → 30.2 s = 24 s/hour; 40 min 1280x720@30 → 28.7 s = 42 s/hour; 10 min 1920x1080@30 → 9.6 s = 54 s/hour. Video stage ≈ raw ffmpeg decode (decode-bound, scales with pixels × fps); `-skip_frame bidir` rejected (slower wall, decoder errors). Render ≈ 3 s per 17 s 720p clip unchanged.
+
+Weak / unverified: 1080p60 would be ≈ 100 s/hour (over the 60 s target) — needs decoder-side work (hw decode output path, or `-threads`/`-lowres`). On real footage `motion` saturates at 1.0 on most picks and the top clip is often intro/end screens (P9 menus) — tuning + two-signal agreement is phase 4 work. Keyframes at 0.5 s ≤ 91 terms; no cy pan; cut snap barely exercised (synthetic has no cuts). Windows untested. Footage never copied or committed.
