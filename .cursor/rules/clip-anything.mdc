@@ -1,0 +1,6 @@
+---
+description: Making highlight clips, shorts or reels from a gameplay recording, stream VOD or folder of recordings with the local clip-anything CLI
+alwaysApply: false
+---
+
+When the user asks for clips, highlights, shorts or reels from a recording, follow the `clip-anything` skill in `.cursor/skills/clip-anything/SKILL.md`: check `uvx` and `ffmpeg`, run `uvx clip-anything "<input>" --dry-run --json` first and show the picks, then render, then explain each pick from `clips/report.json`. Nothing is uploaded; captions and `--vision` titles are machine output and should be checked before posting.
