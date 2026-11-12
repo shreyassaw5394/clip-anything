@@ -129,9 +129,9 @@ def test_facecam_layout_render(facecam_video, tmp_path):
 
 
 def test_facecam_fallback_to_gameplay(synth_video, tmp_path, monkeypatch):
-    import clip_anything.render as render_mod
-
     import dataclasses
+
+    import clip_anything.render as render_mod
 
     # the ladder's first rung needs a captions-capable ffmpeg; force the capability so the test is the same on
     # a machine without libass (stock Homebrew, GitHub's macOS runners): the mocked encode fails that rung anyway
