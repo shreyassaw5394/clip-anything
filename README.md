@@ -2,11 +2,11 @@
 
 **Your 10-hour session has 10 great moments. Clip Anything finds them.**
 
-A free, local, open-source command line tool. Long gameplay recording in, the top N vertical (9:16) highlight clips out, with word-synced captions when there is speech and a `report.json` that shows why each moment was picked. It scores moments by **action** (audio bursts, visual motion, scene cuts), so it works on recordings with zero commentary, on any game, with no account, no upload and no per-game profile.
+A free, local, open-source command line tool. Long gameplay recording in, the top N vertical (9:16) highlight clips out, with word-synced captions when there is speech and a `report.json` that shows why each moment was picked. It scores moments by **action** (audio bursts, visual motion, scene cuts), so it works on recordings with no commentary at all, needs no per-game profile, and runs with no account and no upload.
 
-![demo: one command on a 40-minute Call of Duty 2 match, three clips in 50 s](assets/demo.gif)
+![demo: one command on a 40-minute Call of Duty 2 match, three clips in 50 s](https://raw.githubusercontent.com/shreyassaw5394/clip-anything/main/assets/demo.gif)
 
-<img src="assets/example.jpg" alt="first frame of the top clip: a 9:16 crop that followed the action" width="180">
+<img src="https://raw.githubusercontent.com/shreyassaw5394/clip-anything/main/assets/example.jpg" alt="first frame of the top clip: a 9:16 crop that followed the action" width="180">
 
 ```
 uvx clip-anything gameplay.mp4
@@ -65,22 +65,22 @@ Output: `clips/<stem>_01_<mm-ss>.mp4` ... (1080x1920 H.264 + AAC, faststart) and
 2. **Audio signals** per 0.5 s: RMS, spectral-flux onsets (gunshots, explosions, hits), and loudness against a rolling 60 s baseline, so constant music, radio or engine noise does not flatten the signal.
 3. **Visual signals** per 0.5 s: motion energy, scene cuts, flashes, and the centre of motion mass that the crop will follow. Static cards (lobby, menu, loading screen) are detected and penalised.
 4. **Scoring.** Signals are robust-normalised (rolling median / MAD), gated for informativeness, then mixed: a weighted mean, the strongest single signal, and an agreement term that rewards audio and motion rising together, so a lone loud menu sound cannot win alone. Peaks are picked, each becomes a 15-45 s window with the build-up before the peak (60 / 40), snapped to a quiet point or a cut, and overlapping windows are de-duplicated.
-5. **Speech (optional).** If the `captions` extra is installed and speech is present, faster-whisper transcribes the chosen clips, excitement words add a bonus, and word-synced captions are burned in. Recordings with no speech skip this entirely.
+5. **Speech (optional).** If the `captions` extra is installed and speech is present, faster-whisper transcribes the chosen clips, excitement words add a bonus, and word-synced captions are burned in. Recordings with no speech skip this entirely. Captions are automatic speech recognition output: they can mishear words, so read them before you post (the sidecar `.ass` and `report.json` carry the text).
 6. **Facecam (optional).** A static webcam region in a corner is detected and stacked above the gameplay.
 7. **Render.** One ffmpeg pass per clip: an action-following 9:16 crop with smoothed panning, HDR tone-mapped to SDR, fades, libx264 `veryfast` CRF 20, AAC.
 
 Analysis signals are cached next to the video in `.clipanything/<id>/` so a re-run with different weights or counts takes seconds.
 
-Measured on an M1 Max laptop: analysis takes about 25-55 seconds per hour of 480p-1080p30 input (decode-bound; 1080p60 is roughly 100 s/hour), and each 17 s 720p clip renders in about 3 s. A 1-hour file: analysis in well under a minute, cached re-runs in a few seconds.
+Measured on an M1 Max laptop (2026-11-12, `scripts/eval.py`): analysis takes about 25-55 seconds per hour of 480p-1080p30 input (decode-bound; 1080p60 is roughly 100 s/hour), and each 17 s 720p clip renders in about 3 s. A 1-hour file: analysis in well under a minute, cached re-runs in a few seconds.
 
 ## How it differs from transcript-first clippers
 
-Most automatic clipping tools, hosted and open source, pick moments from the **transcript**: they look for a complete sentence, a punchline or a keyword, then cut around the speech. That works for podcasts and talking-head streams, and it fails on gameplay: a silent clutch, a crash, a last-second goal or a boss kill with music over it has no transcript to find. Tools that do detect game action usually do it with per-game detectors (kill-feed OCR, HUD templates, trained models for a list of supported titles), so a game that is not on the list, or that came out this week, gets a worse fallback or nothing.
+Many automatic clipping tools, hosted and open source, pick moments from the **transcript**: they look for a complete sentence, a punchline or a keyword, then cut around the speech. That works for podcasts and talking-head streams, and it fails on gameplay: a silent clutch, a crash, a last-second goal or a boss kill with music over it has no transcript to find. Tools that do detect game action often do it with per-game detectors (kill-feed OCR, HUD templates, trained models for a list of supported titles), so a game that is not on the list, or that came out this week, gets a worse fallback or nothing.
 
 Clip Anything scores **what happened**, not what was said:
 
 - Action signals first (audio onsets, loudness over baseline, motion, cuts). Speech is a bonus weight, never a requirement.
-- Game-agnostic by construction. There is no profile, no HUD template, no model trained on one game. It works on day one for any game, GTA 6 included, because it never needs to know which game it is looking at.
+- Game-agnostic by construction. There is no profile, no HUD template, no model trained on one game, so nothing has to be added for a new title such as GTA 6: it never needs to know which game it is looking at. So far it has been measured on two games (see Known limits).
 - Build-up included. Every clip starts before the peak and ends at a quiet point, so the moment reads as a story and not just the final frame.
 - Local and private. Nothing is uploaded, there is no account, no credit meter, no watermark, no expiry. The only network use is the optional, one-time Whisper model download, which asks first.
 - Honest output. `--count` is a maximum: if a quiet session only has four real moments you get four clips, and `report.json` tells you why.
@@ -91,7 +91,7 @@ Transcript-first tools remain the better choice when the content *is* the talkin
 
 If [Ollama](https://ollama.com) is running on your machine with a vision model (`ollama pull qwen3-vl:4b`, or `gemma3:4b`, `minicpm-v`, `moondream`), `--vision` sends 4 small frames from each candidate clip to it and asks for a clip-worthiness score and a 4-6 word title. The final score becomes 0.7 action + 0.3 vision; titles land in the report and in the file names. Only `127.0.0.1:11434` is ever contacted. If Ollama is not running, no vision model is installed, or the model times out or answers badly, the run continues with the action-only order and leaves one warning line. Pick a model explicitly with `[vision] model = "..."` in the config.
 
-The vision pass is not yet tuned or measured on real footage: treat it as an experiment, and read `report.json` before trusting a re-ordered list.
+Scores and titles from this pass are AI-generated and may be wrong: a title can misdescribe the moment, and the re-ordering can demote a real highlight. The pass is not yet tuned or measured on real footage, so treat it as an experiment and read `report.json` before trusting a re-ordered list or a title.
 
 ## Config file
 
@@ -166,7 +166,8 @@ Measured on 2026-11-12 (see the numbers above); anything not measured is listed 
 - 1080p60 sources analyse at roughly 100 s per hour (decode-bound), above the one-minute goal. 480p-1080p30 sources are well under it.
 - Bounded memory is verified to 3 hours (363 MiB peak); a 10-hour file has not been run.
 - Captions and facecam detection were verified on fixtures and the two recordings above, not on a streamer VOD with a webcam.
-- The `--vision` pass has not been run against a real Ollama model.
+- The `--vision` pass has not been run against a real Ollama model. Its titles and scores are AI-generated and may be wrong.
+- Captions come from automatic speech recognition and may be wrong; check them before posting.
 - No human has yet reviewed a batch of clips for "postable without edits"; that review is the next step before claiming it.
 - Windows is untested (the code avoids shell-specific paths, nothing more).
 
@@ -193,9 +194,9 @@ The synthetic video has six injected audio bursts and four motion bursts; the en
 
 ## About
 
-Clip Anything is a free, non-commercial passion project by an independent developer, shipped under [Ship at Midnight](https://shipatmidnight.dev). No telemetry, no accounts, nothing phones home.
+Clip Anything is a free, non-commercial passion project by an independent developer, shipped under [Ship at Midnight](https://shipatmidnight.dev). No telemetry, no accounts, nothing phones home. It is provided as is, without warranty of any kind; clip choices, captions and titles are automated output that can be wrong, and you decide what to post.
 
-Game names appear only to describe what a recording contains. Clip Anything is not affiliated with or endorsed by any game publisher.
+Game names (GTA, Call of Duty, Persona and others) appear only to describe what a recording contains; they are trademarks of their respective owners. Clip Anything is not affiliated with or endorsed by any game publisher. Source: [github.com/shreyassaw5394/clip-anything](https://github.com/shreyassaw5394/clip-anything). Security reports: see [SECURITY.md](SECURITY.md).
 
 MIT, see [LICENSE](LICENSE). Third-party components are listed in [NOTICE](NOTICE).
 

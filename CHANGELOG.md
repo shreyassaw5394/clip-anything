@@ -17,3 +17,4 @@ First release, built in the open for the Ship at Midnight launch.
 - Optional `--vision` re-rank and titles with a local Ollama vision model; degrades silently when Ollama is absent
 - Library-first design: `clip_anything.pipeline.run()` with progress events, thin typer CLI, TOML config with every weight exposed
 - No telemetry, no accounts, no uploads
+- Repository: CI (ruff and pytest on macOS and Ubuntu, Python 3.11 and 3.13), Dependabot, security policy, third-party licence list, `uv.lock`
