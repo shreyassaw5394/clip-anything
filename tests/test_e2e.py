@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 
@@ -142,6 +143,9 @@ def test_cli_bad_input(tmp_path):
 
 def test_cli_ffmpeg_missing(tmp_path):
     env = {"PATH": str(tmp_path), "HOME": str(tmp_path), "CLIP_ANYTHING_EXTRA_PATHS": ""}
+    for k in ("SYSTEMROOT", "USERPROFILE", "TEMP", "TMP"):  # Windows: python needs these
+        if k in os.environ:
+            env[k] = os.environ[k]
     res = subprocess.run(
         [sys.executable, "-m", "clip_anything.cli", "x.mp4"],
         capture_output=True,

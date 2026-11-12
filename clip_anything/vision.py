@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .events import Event, OnEvent, emit
+from .probe import _popen_kwargs
 from .report import Report, Stage, Warning
 
 OLLAMA_BASE = "http://127.0.0.1:11434"
@@ -212,7 +213,9 @@ def grab_frame(ffmpeg: str, video: str | os.PathLike, t: float, width: int = 320
         "-",
     ]
     try:
-        out = subprocess.run(args, capture_output=True, timeout=FRAME_TIMEOUT_S, check=False)
+        out = subprocess.run(
+            args, capture_output=True, timeout=FRAME_TIMEOUT_S, check=False, **_popen_kwargs()
+        )
     except (OSError, subprocess.TimeoutExpired):
         return None
     return out.stdout if out.returncode == 0 and out.stdout.startswith(b"\xff\xd8") else None

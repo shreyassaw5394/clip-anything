@@ -29,3 +29,20 @@ def test_options_layering():
 
     with pytest.raises(InputError):
         Options.from_layers({"clipz": {}})
+
+
+def test_bundled_ffmpeg_dir_wins(tmp_path, monkeypatch):
+    import os
+    import stat
+
+    from clip_anything.probe import _find, bundle_dirs
+
+    exe = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    fake = tmp_path / exe
+    fake.write_text("#!/bin/sh\nexit 0\n")
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("CLIP_ANYTHING_FFMPEG_DIR", str(tmp_path))
+    assert bundle_dirs()[0] == tmp_path
+    assert _find("ffmpeg") == str(fake)
+    monkeypatch.delenv("CLIP_ANYTHING_FFMPEG_DIR")
+    assert _find("ffmpeg") != str(fake)

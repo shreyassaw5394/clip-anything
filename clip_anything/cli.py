@@ -19,6 +19,17 @@ EXIT_BAD_INPUT = 2
 EXIT_NO_FFMPEG = 3
 
 
+def _utf8_console() -> None:
+    """Windows consoles default to a legacy code page; JSON and rich output are UTF-8."""
+    if os.name != "nt":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError):  # pragma: no cover
+            pass
+
+
 def _version(value: bool) -> None:
     if value:
         print(f"clip-anything {__version__}")
@@ -75,6 +86,7 @@ def main(
     ] = None,
 ) -> None:
     """Long gameplay recording in, top N vertical highlight clips + report.json out."""
+    _utf8_console()
     from rich.console import Console
 
     err = Console(stderr=True)
