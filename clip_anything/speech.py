@@ -4,9 +4,11 @@ excitement bonus (exclamation words + shouts) used to re-rank candidates."""
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -78,6 +80,28 @@ def model_status(name: str) -> str:
     return "ready" if model_cached(name) else "download"
 
 
+@contextlib.contextmanager
+def _quiet_stderr():
+    """Point fd 2 at /dev/null for the block. Importing faster-whisper loads a second
+    libavdevice next to opencv's and the objc runtime prints a duplicate-class notice
+    straight to fd 2 (not via sys.stderr), which tears the progress display. Harmless, so
+    it is hidden. Fails open if fds cannot be duplicated."""
+    try:
+        sys.stderr.flush()
+        saved = os.dup(2)
+        devnull = os.open(os.devnull, os.O_WRONLY)
+    except OSError:
+        yield
+        return
+    try:
+        os.dup2(devnull, 2)
+        yield
+    finally:
+        os.dup2(saved, 2)
+        os.close(saved)
+        os.close(devnull)
+
+
 def load_model(name: str, allow_download: bool):
     """Return (model, reason). model is None when captions must be skipped."""
     status = model_status(name)
@@ -87,16 +111,23 @@ def load_model(name: str, allow_download: bool):
         mb = MODEL_SIZES_MB.get(name, "?")
         return None, f"Whisper model '{name}' (~{mb} MB) not downloaded: rerun with --yes"
     try:
-        from faster_whisper import WhisperModel
+        with _quiet_stderr():
+            from faster_whisper import WhisperModel
 
-        cpu = os.cpu_count() or 4
-        model = WhisperModel(
-            name,
-            device="cpu",
-            compute_type="int8",
-            cpu_threads=max(1, cpu // 2),
-            local_files_only=not allow_download,
-        )
+            try:  # silence the "MPS backend" tip ctranslate2 prints on Apple Silicon
+                import ctranslate2
+
+                ctranslate2.set_log_level(40)  # ERROR
+            except Exception:
+                pass
+            cpu = os.cpu_count() or 4
+            model = WhisperModel(
+                name,
+                device="cpu",
+                compute_type="int8",
+                cpu_threads=max(1, cpu // 2),
+                local_files_only=not allow_download,
+            )
     except Exception as exc:  # download failure, bad model name, broken install
         return None, f"could not load Whisper model '{name}': {str(exc)[:160]}"
     return model, ""

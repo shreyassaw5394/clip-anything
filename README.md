@@ -4,8 +4,9 @@
 
 A free, local, open-source command line tool. Long gameplay recording in, the top N vertical (9:16) highlight clips out, with word-synced captions when there is speech and a `report.json` that shows why each moment was picked. It scores moments by **action** (audio bursts, visual motion, scene cuts), so it works on recordings with zero commentary, on any game, with no account, no upload and no per-game profile.
 
-<!-- demo GIF: assets/demo.gif (captured by the main session before launch) -->
-![demo](assets/demo.gif)
+![demo: one command on a 40-minute Call of Duty 2 match, three clips in 50 s](assets/demo.gif)
+
+<img src="assets/example.jpg" alt="first frame of the top clip: a 9:16 crop that followed the action" width="180" align="right">
 
 ```
 uvx clip-anything gameplay.mp4
