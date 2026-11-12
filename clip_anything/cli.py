@@ -73,6 +73,29 @@ def main(
             "--count is a maximum). 0 = rank the file against itself only",
         ),
     ] = None,
+    ai: Annotated[
+        bool,
+        typer.Option(
+            "--ai/--no-ai",
+            help="Advanced mode: AI re-rank + titles/hooks via local Ollama or your own API key",
+        ),
+    ] = False,
+    ai_provider: Annotated[
+        str, typer.Option("--ai-provider", help="auto | ollama | openai | anthropic | none")
+    ] = "auto",
+    ai_model: Annotated[
+        str | None, typer.Option("--ai-model", help="Text/API model (e.g. llama3.2, gpt-4o-mini)")
+    ] = None,
+    ai_vision_model: Annotated[
+        str | None, typer.Option("--ai-vision-model", help="Ollama vision model for frames")
+    ] = None,
+    ai_key: Annotated[
+        str | None,
+        typer.Option(
+            "--ai-key",
+            help="API key for openai/anthropic (prefer OPENAI_API_KEY / ANTHROPIC_API_KEY)",
+        ),
+    ] = None,
 ) -> None:
     """Long gameplay recording in, top N vertical highlight clips + report.json out."""
     from rich.console import Console
@@ -142,6 +165,23 @@ def main(
             if typer.confirm(f"Download Whisper {opts.speech.model} (~{mb} MB) for captions?"):
                 opts.speech.yes = True
 
+    # --ai: pick a provider now (fail fast, before analysis); the pass itself runs pre-render.
+    reranker = None
+    if ai and ai_provider != "none":
+        from .ai import AISettings, Reranker, resolve_provider
+
+        settings = AISettings(
+            provider=ai_provider, model=ai_model, vision_model=ai_vision_model, key=ai_key
+        )
+        provider, why = resolve_provider(settings)
+        del ai_key, settings
+        if provider is None:
+            err.print(f"[red]--ai: {why}[/red]")
+            raise typer.Exit(EXIT_BAD_INPUT)
+        reranker = Reranker(provider, caps.ffmpeg)
+        if not as_json:
+            err.print(f"[dim]{provider.disclosure(opts.clips.count * 3)}[/dim]")
+
     from .pipeline import run
     from .ui import ProgressUI, print_summary
 
@@ -150,7 +190,9 @@ def main(
     try:
         with ui:
             target = video[0] if len(video) == 1 else video
-            report = run(target, opts, on_event=ui.on_event, cancel=cancel, caps=caps)
+            report = run(
+                target, opts, on_event=ui.on_event, cancel=cancel, caps=caps, rerank=reranker
+            )
     except KeyboardInterrupt:
         cancel.set()
         err.print("[yellow]cancelled[/yellow]")
@@ -173,6 +215,12 @@ def main(
             if report.report_path:
                 report.write(report.report_path)
 
+    if reranker is not None:
+        from .ai import finish_report
+
+        if finish_report(report) and report.report_path:
+            report.write(report.report_path)
+
     if as_json:
         json.dump(report.to_dict(), sys.stdout, indent=2)
         sys.stdout.write("\n")
@@ -180,6 +228,29 @@ def main(
         print_summary(err, report)
     if not dry_run and report.clips and not report.ok_clips:
         raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------- `clip-anything setup`
+# Typer turns a second registered command into a command group, which would make the plain
+# `clip-anything video.mp4` fail ("No such command"). So `setup` is dispatched here, before
+# Typer parses argv; everything else is the single `main` command above.
+
+
+class _SetupAwareTyper(typer.Typer):
+    def __call__(self, *args, **kwargs):
+        argv = sys.argv[1:]
+        if argv and argv[0] == "setup":
+            from .setup_cmd import setup_app
+
+            return setup_app(argv[1:], prog_name="clip-anything setup")
+        return super().__call__(*args, **kwargs)
+
+
+app.__class__ = _SetupAwareTyper
+app.registered_commands[0].epilog = (
+    "First time? `clip-anything setup` checks ffmpeg, captions and (optional) local AI and "
+    "installs what is missing, with consent. Then add --ai for AI titles and smarter picks."
+)
 
 
 if __name__ == "__main__":  # pragma: no cover
