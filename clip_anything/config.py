@@ -37,8 +37,12 @@ class ScoringOptions:
     w_motion: float = 0.8
     w_cut: float = 0.15
     w_speech: float = 0.3
-    alpha: float = 0.5  # mean/max blend
-    z_cap: float = 6.0
+    # score = w_mean * weighted mean + w_max * max + w_agree * sqrt(audio * motion)
+    w_mean: float = 0.3
+    w_max: float = 0.3
+    w_agree: float = 0.4
+    z_soft: float = 4.0  # rolling z-score -> tanh(z / z_soft): no hard saturation at 1.0
+    scale_frac: float = 0.25  # sigma floor = scale_frac * global (p90 - p50): flat regions
     local_window_s: float = 300.0
     smooth_sigma_s: float = 1.0
     prominence: float = 0.1
@@ -53,6 +57,17 @@ class ScoringOptions:
     lead_frac: float = 0.6
     min_gap_s: float = 30.0
     overlap_frac: float = 0.2
+    # static cards (lobby, menu, loading): score *= 1 - w_card * card
+    w_card: float = 0.8
+    still_lo: float = 0.92  # video.still below this is never a card (testsrc2 sits at 0.91)
+    card_s: float = 10.0  # rolling-median span for the card test (page flips are not motion)
+    # intro/outro: first/last edge_s are scaled by edge_factor unless agreement is strong
+    edge_s: float = 30.0
+    edge_factor: float = 0.5
+    edge_agree: float = 0.7
+    # --count is a maximum: windows below min_score are never returned
+    min_score: float = 0.35
+    zero_start_ratio: float = 2.0  # a clip starting at 0:00 needs 2x the median top score
 
 
 @dataclass
@@ -76,11 +91,44 @@ class RenderOptions:
     dry_run: bool = False
 
 
+DEFAULT_EXCITEMENT_WORDS = [
+    "no way",
+    "let's go",
+    "lets go",
+    "oh my god",
+    "what",
+    "bro",
+    "dude",
+    "insane",
+    "clutch",
+    "holy",
+    "wow",
+    "yes",
+    "come on",
+    "are you kidding",
+    "oh no",
+    "nice",
+    "sick",
+]
+
+
 @dataclass
 class SpeechOptions:
     captions: bool = True
     model: str = "base.en"
-    yes: bool = False
+    yes: bool = False  # allow the one-time Whisper model download
+    rank: bool = False  # transcribe the top 3N candidates and re-rank by excitement (slow)
+    excitement_words: list[str] = field(default_factory=lambda: list(DEFAULT_EXCITEMENT_WORDS))
+    shout_db: float = 8.0  # a word is a shout when clip RMS sits this far above its median
+    min_words: int = 3  # fewer confident words than this -> no captions for the clip
+    min_word_prob: float = 0.5
+    min_logprob: float = -1.0
+    max_no_speech: float = 0.6
+    max_words_per_line: int = 4
+    highlight: str = "&H0000FFFF"  # ASS BGR: current word in yellow
+    font: str = "Arial"
+    font_size: int = 80  # at 1080x1920
+    margin_v: int = 600  # px from the bottom at 1920 high -> text sits at ~68 % height
 
 
 @dataclass

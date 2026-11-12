@@ -5,7 +5,10 @@
 Variants: base (default), music (constant loud bed under the bursts), vfr (random frame
 drops with -fps_mode vfr so frame durations vary), quiet (no audio bursts: only the motion
 bursts can be found), square (40 s, one slow-moving square + one audio burst, for the
-follow-crop test; truth in synth_square.json).  Usage:
+follow-crop test; truth in synth_square.json), lobby (two static "cards" with a changing text
+strip: one silent, one under loud music, plus two real audio+motion events; the cards must not
+be picked), agree (loud-only, motion-only and loud+motion events: the last must rank first).
+Usage:
   python scripts/make_test_video.py [--out tests/fixtures] [--variant base|music|vfr|quiet|all]
   (also: --variant square)
 """
@@ -19,7 +22,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-GEN_VERSION = 5
+GEN_VERSION = 6
 DURATION = 180.0
 # (start_s, duration_s) gunfire-like white-noise bursts
 AUDIO_BURSTS = [(12.0, 0.6), (44.0, 1.2), (76.0, 0.4), (108.0, 1.5), (140.0, 0.8), (172.0, 1.0)]
@@ -33,7 +36,14 @@ NAMES = {
     "vfr": "synth_vfr.mp4",
     "quiet": "synth_quiet.mp4",
     "square": "synth_square.mp4",
+    "lobby": "synth_lobby.mp4",
+    "agree": "synth_agree.mp4",
 }
+# lobby variant: (start, end) static cards; the second sits under a loud music bed
+LOBBY_CARDS = [(20.0, 50.0), (100.0, 130.0)]
+LOBBY_EVENTS = [70.0, 150.0]  # 1 s audio burst + 2 s motion burst together
+# agree variant: one event of each kind
+AGREE_LOUD, AGREE_MOTION, AGREE_BOTH = 40.0, 90.0, 140.0
 # square variant: duration, square x-centre fraction at start/end (linear), one audio burst
 SQUARE_DURATION = 40.0
 SQUARE_X0, SQUARE_X1 = 0.12, 0.88
@@ -60,6 +70,8 @@ def build(out_dir: Path, variant: str, ffmpeg: str = "ffmpeg") -> Path:
     out = out_dir / name
     if variant == "square":
         return _build_square(out_dir, out, ffmpeg)
+    if variant in ("lobby", "agree"):
+        return _build_events(out_dir, out, ffmpeg, variant)
     if variant == "vfr":
         src = out_dir / "synth.mp4"
         if not src.is_file():
@@ -147,6 +159,64 @@ def build(out_dir: Path, variant: str, ffmpeg: str = "ffmpeg") -> Path:
     return out
 
 
+def _build_events(out_dir: Path, out: Path, ffmpeg: str, variant: str) -> Path:
+    d = DURATION
+    base = "0.04*sin(2*PI*220*t)+0.01*(random(0)-0.5)"
+    if variant == "lobby":
+        c0, c1 = LOBBY_CARDS[1]
+        bursts = "+".join(f"between(t,{e},{e + 1.0})" for e in LOBBY_EVENTS)
+        motion = "+".join(f"between(t,{e},{e + 2.0})" for e in LOBBY_EVENTS)
+        music = f"(0.30*sin(2*PI*330*t)+0.12*sin(2*PI*660*t))*between(t,{c0},{c1})"
+        audio = f"{base}+{music}+1.5*(random(0)-0.5)*({bursts})"
+        cards = "+".join(f"between(t,{a},{b})" for a, b in LOBBY_CARDS)
+        # static card: opaque grey frame; a 160x24 strip of testsrc (moving counters) = text
+        extra_inputs = [
+            "-f", "lavfi", "-i", f"color=c=0x303030:s=1280x720:r=30:d={d}",
+            "-f", "lavfi", "-i", f"testsrc=size=160x24:rate=30:duration={d}",
+        ]
+        graph = (
+            "[0:v][1:v]overlay=x='(W-w)*mod(t*1.7,1)':y='(H-h)*abs(sin(t*5))'"
+            f":enable='{motion}'[g];"
+            f"[g][3:v]overlay=0:0:enable='{cards}'[c];"
+            f"[c][4:v]overlay=560:600:enable='{cards}'[v]"
+        )
+        truth = {
+            "cards": [{"start": a, "end": b} for a, b in LOBBY_CARDS],
+            "events": [{"t": e} for e in LOBBY_EVENTS],
+        }
+    else:
+        bursts = (
+            f"between(t,{AGREE_LOUD},{AGREE_LOUD + 1.0})"
+            f"+between(t,{AGREE_BOTH},{AGREE_BOTH + 1.0})"
+        )
+        motion = (
+            f"between(t,{AGREE_MOTION},{AGREE_MOTION + 2.0})"
+            f"+between(t,{AGREE_BOTH},{AGREE_BOTH + 2.0})"
+        )
+        audio = f"{base}+1.5*(random(0)-0.5)*({bursts})"
+        extra_inputs = []
+        graph = (
+            "[0:v][1:v]overlay=x='(W-w)*mod(t*1.7,1)':y='(H-h)*abs(sin(t*5))'"
+            f":enable='{motion}'[v]"
+        )
+        truth = {"loud": AGREE_LOUD, "motion": AGREE_MOTION, "both": AGREE_BOTH}
+    cmd = [
+        ffmpeg, "-y", "-nostdin", "-hide_banner", "-loglevel", "error",
+        "-f", "lavfi", "-i", f"testsrc2=size=1280x720:rate=30:duration={d}",
+        "-f", "lavfi", "-i", f"color=c=white:s=260x260:r=30:d={d}",
+        "-f", "lavfi", "-i", f"aevalsrc=exprs='{audio}':s=48000:d={d}",
+        *extra_inputs,
+        "-filter_complex", graph, "-map", "[v]", "-map", "2:a",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "128k", "-shortest", "-movflags", "+faststart", str(out),
+    ]  # fmt: skip
+    subprocess.run(cmd, check=True)
+    truth["gen_version"] = GEN_VERSION
+    truth["duration_s"] = d
+    (out_dir / f"synth_{variant}.json").write_text(json.dumps(truth, indent=2))
+    return out
+
+
 def _build_square(out_dir: Path, out: Path, ffmpeg: str) -> Path:
     d = SQUARE_DURATION
     s, bd = SQUARE_BURST
@@ -211,7 +281,8 @@ def _build_square(out_dir: Path, out: Path, ffmpeg: str) -> Path:
 def ensure(out_dir: Path, variant: str = "base") -> Path:
     """Build only if missing or generated by an older version of this script."""
     out = out_dir / NAMES[variant]
-    truth = out_dir / ("synth_square.json" if variant == "square" else "synth.json")
+    own = variant in ("square", "lobby", "agree")
+    truth = out_dir / (f"synth_{variant}.json" if own else "synth.json")
     if out.is_file() and truth.is_file():
         try:
             if json.loads(truth.read_text()).get("gen_version") == GEN_VERSION:
