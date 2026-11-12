@@ -88,3 +88,29 @@ def test_no_captions_on_silent_clip(synth_video, tmp_path):
     report = run(synth_video, opts, caps=caps)
     c = report.clips[0]
     assert c.captions is False and c.captions_path is None and c.components["speech"] == 0.0
+
+
+def test_transcription_error_becomes_a_warning(synth_video, tmp_path, monkeypatch):
+    """A broken speech backend (missing model asset in a packaged build, say) must not fail
+    the run: captions are skipped with one warning and the clips are still picked."""
+    import clip_anything.speech as speech_mod
+
+    monkeypatch.setattr(speech_mod, "load_model", lambda name, allow_download: (object(), ""))
+
+    def boom(model, pcm, sp, sr):
+        raise RuntimeError("NO_SUCHFILE: silero_vad.onnx")
+
+    monkeypatch.setattr(speech_mod, "transcribe", boom)
+    opts = Options.from_layers(
+        {
+            "clips": {"count": 2},
+            "speech": {"captions": True, "yes": True},
+            "render": {"out_dir": str(tmp_path), "dry_run": True},
+            "analysis": {"cache": False},
+        }
+    )
+    report = run(synth_video, opts)
+    assert len(report.clips) == 2
+    assert [s.status for s in report.stages if s.name == "speech"] == ["failed"]
+    assert any(w.code == "captions_off" and "NO_SUCHFILE" in w.message for w in report.warnings)
+    assert all("speech" not in c.components for c in report.clips)

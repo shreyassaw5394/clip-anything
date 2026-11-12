@@ -35,6 +35,7 @@ def ensure(root, variant):
     except EncoderMissing as exc:
         pytest.skip(str(exc))
 
+
 FIX = ROOT / "tests" / "fixtures"
 QUIET = {"speech": {"captions": False}}
 
