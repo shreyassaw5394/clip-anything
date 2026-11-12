@@ -1,7 +1,7 @@
 # GRAPH — the one file an executor reads (≤ 90 lines; update your node, never rewrite others)
 
 ## Product
-Clip Anything: free, open-source, fully local CLI. Long gameplay recording in → top N vertical 9:16 highlight clips (15–45 s, burned captions when there's speech) + report.json out. Wedge: picks moments by ACTION (audio bursts + visual motion + cuts), works with zero speech; speech is bonus weight. Ships Sunday 2026-11-15 midnight under Ship at Midnight; GTA 6 launches 2026-11-19. Owner: "as simple and seamless as possible". v1 that demos by Saturday 2026-11-14 night beats completeness.
+Clip Anything: free, open-source, fully local CLI. Long gameplay recording in → top N vertical 9:16 highlight clips (15–45 s, burned captions when there's speech) + report.json out. Wedge: picks moments by ACTION (audio bursts + visual motion + cuts), works with zero speech; speech is bonus weight. Ships Sunday 2026-11-15 midnight under Ship at Midnight; GTA 6 launches 2026-11-19. Owner: "as simple and seamless as possible"; "local, free, open source, but we can do a hosted version later" → keep the pipeline a pure library (`clip_anything.pipeline.run(video, options) -> Report`) with the CLI as a thin wrapper, no global state, so a hosted service can import it later. v1 that demos by Saturday 2026-11-14 night beats completeness.
 
 ## Rules (non-negotiable)
 - Python 3.11+ (use /Library/Frameworks/Python.framework/Versions/3.11/bin/python3.11 + uv). Package `clip-anything`, module `clip_anything`, entry `clip-anything`. `uvx clip-anything` and `pipx install clip-anything` must work. MIT. No telemetry, no network calls except optional local Ollama at 127.0.0.1.
