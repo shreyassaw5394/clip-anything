@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 
 DUR = 24
+ACTION_AT = 8.0
 
 
 def draw_face(size: int = 200) -> np.ndarray:
@@ -44,7 +45,8 @@ def draw_face(size: int = 200) -> np.ndarray:
 
 
 def build_facecam_video(out_dir: Path, corner: str = "top-left") -> Path:
-    """1280x720 panning testsrc2 with a static 320x240 'webcam' box holding the drawn face."""
+    """1280x720 panning testsrc2 with a static 320x240 'webcam' box holding the drawn face,
+    plus one action moment at ACTION_AT (loud burst + fast white square) so a clip is picked."""
     import cv2
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -60,10 +62,15 @@ def build_facecam_video(out_dir: Path, corner: str = "top-left") -> Path:
         "ffmpeg", "-y", "-nostdin", "-hide_banner", "-loglevel", "error",
         "-f", "lavfi", "-i", f"testsrc2=size=1480x840:rate=30:duration={DUR}",
         "-loop", "1", "-i", str(png),
-        "-f", "lavfi", "-i", f"aevalsrc=exprs='0.3*sin(2*PI*220*t)*gt(mod(t,6),5)':s=48000:d={DUR}",
+        "-f", "lavfi", "-i",
+        f"aevalsrc=exprs='0.9*sin(2*PI*180*t)*between(t,{ACTION_AT},{ACTION_AT + 1.2})'"
+        f":s=48000:d={DUR}",
+        "-f", "lavfi", "-i", f"color=c=white:s=260x260:r=30:d={DUR}",
         "-filter_complex",
         "[0:v]crop=1280:720:x='100+90*sin(t)':y='60+50*cos(1.3*t)'[bg];"
-        f"[1:v]format=gray,format=yuv420p[cam];[bg][cam]overlay={x}:{y}:shortest=1[v]",
+        "[bg][3:v]overlay=x='(W-w)*mod(t*1.7,1)':y='(H-h)*abs(sin(t*5))'"
+        f":enable='between(t,{ACTION_AT},{ACTION_AT + 2})'[bg2];"
+        f"[1:v]format=gray,format=yuv420p[cam];[bg2][cam]overlay={x}:{y}:shortest=1[v]",
         "-map", "[v]", "-map", "2:a",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-shortest", "-movflags", "+faststart", str(out),
@@ -74,7 +81,6 @@ def build_facecam_video(out_dir: Path, corner: str = "top-left") -> Path:
 
 SPEECH_TEXT = "No way. Let's go! Oh my god, that was insane, bro."
 SPEECH_AT = 3.0
-ACTION_AT = 8.0
 
 
 def build_speech_video(out_dir: Path) -> Path | None:
