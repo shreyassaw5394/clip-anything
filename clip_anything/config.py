@@ -43,7 +43,7 @@ class ScoringOptions:
     span_frac: float = 0.35
     # informativeness floors (raw units: dB for audio, abs diff for motion)
     floor_loud_db: float = 6.0
-    floor_onset: float = 0.5
+    floor_onset: float = 0.3
     floor_rms_db: float = 6.0
     floor_motion: float = 4.0
     lead_frac: float = 0.6
