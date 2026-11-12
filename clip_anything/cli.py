@@ -111,6 +111,15 @@ def main(
         err.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from None
 
+    # --vision: optional local Ollama re-rank + titles. Applied here after the run until the
+    # pipeline grows a `vision` stage of its own (then this block is a no-op).
+    if opts.vision.enabled and not any(s.name == "vision" for s in report.stages):
+        from .vision import rerank_report
+
+        rerank_report(report, video, caps.ffmpeg, model=opts.vision.model)
+        if report.report_path:
+            report.write(report.report_path)
+
     if as_json:
         json.dump(report.to_dict(), sys.stdout, indent=2)
         sys.stdout.write("\n")
