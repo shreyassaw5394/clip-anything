@@ -18,6 +18,11 @@ Python packages (installed by pip/uv/pipx):
 Optional extra `captions`:
   faster-whisper           MIT               https://github.com/SYSTRAN/faster-whisper
   CTranslate2              MIT               https://github.com/OpenNMT/CTranslate2
+  onnxruntime              MIT               https://onnxruntime.ai
+  av (PyAV)                BSD-3-Clause      https://pyav.basswood.io
+                           (wheels bundle an FFmpeg build, LGPL-2.1+)
+  huggingface_hub          Apache-2.0        https://github.com/huggingface/huggingface_hub
+  tqdm                     MPL-2.0 and MIT   https://tqdm.github.io
   Whisper model weights    MIT (OpenAI)      downloaded once, only after the user agrees
 
 External programs (never bundled, found on PATH):
@@ -25,6 +30,8 @@ External programs (never bundled, found on PATH):
   Ollama (optional)        MIT               https://ollama.com
                            Vision models pulled into Ollama carry their own licences
                            (for example Qwen: Apache-2.0; Gemma: Gemma Terms of Use).
+
+The full transitive list with versions is in THIRD_PARTY_LICENSES.md.
 
 Clip Anything makes no network connection except the optional Whisper model
 download (asked first) and, with --vision, the local Ollama server at 127.0.0.1.
