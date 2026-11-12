@@ -116,9 +116,11 @@ def main(
     if opts.vision.enabled and not any(s.name == "vision" for s in report.stages):
         from .vision import rerank_report
 
-        rerank_report(report, video, caps.ffmpeg, model=opts.vision.model)
-        if report.report_path:
-            report.write(report.report_path)
+        src = Path(str(report.input.get("path", "")))
+        if src.is_file():
+            rerank_report(report, src, caps.ffmpeg, model=opts.vision.model)
+            if report.report_path:
+                report.write(report.report_path)
 
     if as_json:
         json.dump(report.to_dict(), sys.stdout, indent=2)
