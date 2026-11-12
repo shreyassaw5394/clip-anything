@@ -44,8 +44,9 @@ Rich progress UI: probe → audio → video → score → (vision) → render N/
 - 01-core (steps 1–4) — DONE 2026-11-12, see phases/01-core/01-01-SUMMARY.md (audio-only; `pipeline.run()` + CLI + render work; cache at .clipanything/<id>/signals.npz; Signals.arrays raw, scoring normalises)
 - 02-video (steps 5–6) — DONE 2026-11-12, see phases/02-video/02-01-SUMMARY.md (video.motion/cut/flash/cx/cspread in signals.npz; cropplan.py → follow crop expression; HDR tone-map via scale colour management on ffmpeg ≥ 8; --crop follow|center)
 - 03-speech-facecam (7–8) —
-- 04-vision-readme (9–10) —
+- 04-vision-readme (9–10) — step 9 + README/packaging DONE 2026-11-12, see phases/04-vision-readme/04-01-SUMMARY.md (vision.py stub-tested, real model unverified; `--vision` applied post-run in cli.py until pipeline.py gets the 3-line hook; README tuning numbers = 02-02 placeholders; demo.gif pending)
 
 ## Executor log (one line each)
 - 2026-11-12 01-01 executor: steps 1–4 done, 4 commits (b190f21 e403892 3562d30 52534fb), 21 tests green, ruff clean; audio ≈ 4 s/hour; next: 02-video adds video.motion/video.cut/video.cx into Signals.arrays (scoring already consumes video.motion + video.cut)
 - 2026-11-12 02-01 executor: steps 5–6 done, 3 commits (d9b3e8b 20e3621 c96f489), 31 tests green, ruff clean; analysis 24–54 s/hour (decode-bound); next: 03-speech-facecam appends `ass=` after scale in render.build_graph and vstack over the follow crop; phase 4 must tune motion saturation + menu/intro false positives seen on real footage
+- 2026-11-12 04-01 executor: vision.py + README/NOTICE/CHANGELOG + packaging done, 5 commits (7e97699 ae07807 2b2de1c 8dd6b13 5b42047), 11 vision tests green, wheel from clean HEAD runs the synthetic end to end with stub Ollama (titles, slugs) and without (one warning); next: pipeline.py owner adds the pre-render vision hook (see summary), 02-02 fills README placeholders, main session captures assets/demo.gif
