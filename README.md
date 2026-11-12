@@ -198,3 +198,12 @@ Clip Anything is a free, non-commercial passion project by an independent develo
 Game names appear only to describe what a recording contains. Clip Anything is not affiliated with or endorsed by any game publisher.
 
 MIT, see [LICENSE](LICENSE). Third-party components are listed in [NOTICE](NOTICE).
+
+## Use it from Claude Code
+
+```
+/plugin marketplace add shreyassaw5394/clip-anything
+/plugin install clip-anything@clip-anything
+```
+
+Then ask Claude to "make 5 shorts from ~/Videos/last-night.mkv". The `clip-anything` skill checks for `uvx` and ffmpeg, runs a `--dry-run` first so you see the picks with times and scores, renders, and explains from `report.json` why each clip was chosen. It runs the same local CLI; nothing is uploaded. Captions are machine transcription and `--vision` titles come from a local model: check both before posting. There is also an npm launcher, `npx clip-anything gameplay.mp4`, which just runs `uvx clip-anything` for you (see [`npm/`](npm/)).
