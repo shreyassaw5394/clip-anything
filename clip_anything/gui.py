@@ -530,7 +530,40 @@ def selftest() -> int:
     return 0
 
 
+def headless(inputs: list[str], out_dir: str, count: int, captions: bool = False) -> int:
+    """Run the same Controller without a window (packaged-app smoke test): prints the stage
+    lines and the clip list, exit 1 on error."""
+    c = Controller()
+    problem = c.start(JobSettings(inputs=inputs, out_dir=out_dir, count=count, captions=captions))
+    if problem:
+        print(problem)
+        return 2
+    last = ""
+    while c.running or not c.queue.empty():
+        for kind, payload in c.drain():
+            if kind == "progress" and payload.label != last:
+                last = payload.label
+                print(f"{payload.fraction * 100:3.0f}%  {payload.label}")
+            elif kind == "warn":
+                print(f"note: {payload}")
+            elif kind == "error":
+                print(f"error: {payload}")
+                return 1
+            elif kind == "cancelled":
+                print("cancelled")
+                return 130
+            elif kind == "done":
+                for row in clip_rows(payload):
+                    print("  ".join(row))
+                print(f"{len(payload.ok_clips)}/{len(payload.clips)} clips -> {payload.out_dir}")
+                return 0 if payload.ok_clips or not payload.clips else 1
+        threading.Event().wait(0.05)
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
+    """clip-anything-gui [recording ...] [--autostart] | --selftest | --version |
+    --run <recording> --out <folder> [--count N] [--captions]"""
     argv = sys.argv[1:] if argv is None else list(argv)
     if "--selftest" in argv:
         return selftest()
@@ -539,11 +572,26 @@ def main(argv: list[str] | None = None) -> int:
 
         print(f"clip-anything-gui {__version__}")
         return 0
+
+    def _opt(name: str, default: str | None = None) -> str | None:
+        return (
+            argv[argv.index(name) + 1]
+            if name in argv and argv.index(name) + 1 < len(argv)
+            else default
+        )
+
+    if "--run" in argv:
+        video = _opt("--run")
+        out = _opt("--out") or str(Path(video or ".").resolve().parent / "clips")
+        count = int(_opt("--count", "10") or 10)
+        return headless([video] if video else [], out, count, captions="--captions" in argv)
     inputs = [a for a in argv if not a.startswith("-")]
     import tkinter as tk
 
     root = tk.Tk()
-    App(root, inputs=inputs)
+    app = App(root, inputs=inputs)
+    if "--autostart" in argv and inputs:
+        root.after(300, app.start)
     root.mainloop()
     return 0
 

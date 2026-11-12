@@ -1,0 +1,102 @@
+name: Release desktop builds
+
+# Runs only when a version tag is pushed. Builds the PyInstaller one-folder app per OS with a
+# pinned ffmpeg (packaging/fetch_ffmpeg.py verifies SHA-256), uploads the zips/dmg to the
+# GitHub release. Nothing is published to PyPI here.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: windows-x86_64
+          - os: macos-latest
+            artifact: macos-arm64
+          - os: macos-15-intel
+            artifact: macos-x86_64
+            optional: true
+    continue-on-error: ${{ matrix.optional || false }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install
+        run: uv sync --frozen --extra desktop --extra captions
+
+      - name: Build app (pinned ffmpeg + PyInstaller + zip/dmg)
+        env:
+          CLIP_ANYTHING_VERSION: ${{ github.ref_name }}
+        run: uv run python packaging/build.py
+
+      - name: Smoke test the built app
+        shell: bash
+        run: |
+          set -e
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            "./dist/Clip Anything/Clip Anything.exe" --version
+          else
+            "./dist/Clip Anything.app/Contents/MacOS/Clip Anything" --version
+            "./dist/Clip Anything.app/Contents/MacOS/Clip Anything" --selftest
+          fi
+          ls -la dist/*.zip dist/*.dmg 2>/dev/null || ls -la dist/*.zip
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: clip-anything-${{ matrix.artifact }}
+          path: |
+            dist/*.zip
+            dist/*.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+  upload:
+    name: attach to release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          cd artifacts
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create or update the GitHub release (draft until the owner publishes it)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "$TAG" \
+              --notes "Desktop builds are unsigned: see docs/desktop.md for the open-anyway steps."
+          fi
+          gh release upload "$TAG" artifacts/* --repo "$GITHUB_REPOSITORY" --clobber

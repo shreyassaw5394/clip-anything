@@ -128,9 +128,9 @@ def bundle_dirs() -> list[Path]:
     if getattr(sys, "frozen", False):
         exe_dir = Path(sys.executable).resolve().parent
         meipass = getattr(sys, "_MEIPASS", None)
-        for d in (exe_dir, exe_dir / "ffmpeg", Path(meipass) if meipass else None):
-            if d is not None:
-                dirs.append(d)
+        dirs += [exe_dir, exe_dir / "ffmpeg"]
+        if meipass:  # PyInstaller one-folder: <app>/_internal (= Contents/Frameworks in .app)
+            dirs += [Path(meipass) / "ffmpeg", Path(meipass)]
         if exe_dir.name == "MacOS" and exe_dir.parent.name == "Contents":  # .app bundle
             contents = exe_dir.parent
             res = contents / "Resources"
