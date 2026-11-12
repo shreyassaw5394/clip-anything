@@ -16,10 +16,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-GEN_VERSION = 3
+GEN_VERSION = 4
 DURATION = 180.0
 # (start_s, duration_s) gunfire-like white-noise bursts
-AUDIO_BURSTS = [(12.0, 0.6), (44.0, 1.2), (78.0, 0.4), (110.0, 1.5), (140.0, 0.8), (168.0, 1.0)]
+AUDIO_BURSTS = [(12.0, 0.6), (44.0, 1.2), (76.0, 0.4), (108.0, 1.5), (140.0, 0.8), (172.0, 1.0)]
 # (start_s, duration_s) fast-moving bright overlay
 MOTION_BURSTS = [(28.0, 2.0), (62.0, 2.0), (95.0, 2.0), (125.0, 2.0)]
 
