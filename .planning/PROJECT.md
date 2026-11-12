@@ -27,6 +27,7 @@ It finds the ACTION: chases, crashes, explosions, shootouts, near-misses, with z
 - [ ] `uvx clip-anything` and `pipx install clip-anything` both work; ffmpeg checked at start with install help
 - [ ] Synthetic test video generator + unit tests for scoring/peaks + end-to-end test that injected bursts are picked
 - [ ] Library-first: `clip_anything.pipeline.run()` is importable with no global state, so a hosted version can wrap it later
+- [ ] Works for every way people record (owner 2026-11-12: "not just GTA 6, everything; cover all cases"): PS5/Xbox/Switch captures (many short clips or one long file, HEVC/HDR), capture cards, OBS mkv/VFR with separate mic+game audio tracks, ShadowPlay/Steam recordings, Twitch/YouTube VOD downloads, phone screen recordings (vertical, HDR), and action/sports footage; a folder of files is one session; one test fixture per source
 - [ ] README with hook, install, how it differs from transcript-based clippers, roadmap; MIT
 
 ### Out of Scope
@@ -60,6 +61,7 @@ It finds the ACTION: chases, crashes, explosions, shootouts, near-misses, with z
 | Analysis on 16 kHz mono audio + 320px/5fps proxy | Hours-long inputs must analyse in minutes on CPU | — Pending |
 | Library-first pipeline, thin CLI | Hosted version later without a rewrite | — Pending |
 | Vision re-rank optional via Ollama | Ollama not on every machine; must degrade silently | — Pending |
+| Every recording source is a first-class input | Users record on consoles, cards, OBS, phones; a tool that only takes one clean mp4 fails most people | — Pending |
 
 ---
 *Last updated: 2026-11-12 after initialization*
