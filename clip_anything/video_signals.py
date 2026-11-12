@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+import cv2
 import numpy as np
 
 EXTRACTOR_VERSION = 1
@@ -55,11 +56,61 @@ class VideoExtractor:
         y0 = int(round(height * EDGE_FRAC))
         self._mask = np.zeros((height, width), dtype=np.float32)
         self._mask[y0 : height - y0, x0 : width - x0] = 1.0
-        self._xs = (np.arange(width, dtype=np.float32) + 0.5) / width
+        self._xs = (np.arange(width, dtype=np.float64) + 0.5) / width
 
     def feed(self, frames: np.ndarray) -> None:
-        for f in frames:
-            self._frame(f)
+        """Vectorised per chunk: diffs, histograms and centroids in numpy; only the scalar
+        cut/flash confirmation runs per frame."""
+        if frames.size == 0:
+            return
+        k = frames.shape[0]
+        hw = self.w * self.h
+        # histograms on a 2x2-subsampled frame (cut detection does not need every pixel)
+        sub = frames[:, ::2, ::2].reshape(k, -1)
+        hist = np.bincount(
+            (
+                (sub >> 3).astype(np.int32) + (np.arange(k, dtype=np.int32) * HIST_BINS)[:, None]
+            ).ravel(),
+            minlength=k * HIST_BINS,
+        ).reshape(k, HIST_BINS) / float(sub.shape[1])
+        bright = sub.sum(axis=1, dtype=np.uint32) / float(sub.shape[1])
+        if self._prev is None:
+            self._push(_Frame(0.0, 0.0, float(bright[0]), np.nan, np.nan))
+            if k == 1:
+                self._prev, self._prev_hist = frames[-1], hist[-1]
+                return
+            prev = frames[:-1]
+            frames, hist_cur, bright = frames[1:], hist[1:], bright[1:]
+            prev_hist = hist[:-1]
+            k -= 1
+        else:
+            prev = np.concatenate([self._prev[None], frames[:-1]])
+            hist_cur = hist
+            prev_hist = np.concatenate([self._prev_hist[None], hist[:-1]])
+        diff = cv2.absdiff(frames.reshape(k * self.h, self.w), prev.reshape(k * self.h, self.w))
+        diff = diff.reshape(k, self.h, self.w)
+        motion = diff.reshape(k, -1).sum(axis=1, dtype=np.uint32) / float(hw)
+        bc = np.sqrt(hist_cur * prev_hist).sum(axis=1)
+        delta = np.sqrt(np.maximum(0.0, 1.0 - bc))
+        # centroid: squared diff (motion >> noise) inside the edge mask, summed per column
+        d = diff.astype(np.float32)
+        cols = np.einsum("khw,khw,hw->kw", d, d, self._mask)
+        total = cols.sum(axis=1)
+        ok = (motion >= MOTION_FLOOR) & (total > 0)
+        cx = np.full(k, np.nan)
+        spread = np.full(k, np.nan)
+        if ok.any():
+            p = cols[ok] / total[ok][:, None]
+            m1 = p @ self._xs
+            m2 = p @ (self._xs**2)
+            cx[ok] = m1
+            spread[ok] = np.sqrt(np.maximum(0.0, m2 - m1 * m1))
+        for i in range(k):
+            self._push(
+                _Frame(float(motion[i]), float(delta[i]), float(bright[i]), cx[i], spread[i])
+            )
+        self._prev = frames[-1]
+        self._prev_hist = hist_cur[-1]
 
     def finish(self) -> None:
         if self._pending is not None:
@@ -67,28 +118,16 @@ class VideoExtractor:
             self._rows.append((p.motion, p.hist_delta, 0.0, p.cx, p.cspread))
             self._pending = None
 
-    def _frame(self, f: np.ndarray) -> None:
-        f16 = f.astype(np.int16)
-        hist = np.bincount(f.ravel() >> 3, minlength=HIST_BINS).astype(np.float64)
-        hist /= max(1.0, hist.sum())
-        bright = float(f16.mean())
-        if self._prev is None:
-            row = _Frame(0.0, 0.0, bright, np.nan, np.nan)
-        else:
-            diff = np.abs(f16 - self._prev).astype(np.float32)
-            motion = float(diff.mean())
-            delta = float(np.sqrt(max(0.0, 1.0 - np.sum(np.sqrt(hist * self._prev_hist)))))
-            cx, spread = self._centroid(diff, motion)
-            row = _Frame(motion, delta, bright, cx, spread)
+    def _push(self, row: _Frame) -> None:
+        """Confirm the pending frame now that we know what followed it."""
         self._n_frames += 1
-        # confirm the pending frame now that we know what followed it
         if self._pending is not None:
             p = self._pending
             flash = 0.0
             persist = 0.0 if self._suppress_next else p.hist_delta
             self._suppress_next = False
             up = p.bright - self._prev_bright2
-            back = bright - p.bright
+            back = row.bright - p.bright
             if p.hist_delta > 0.15 and row.hist_delta > 0.5 * p.hist_delta:
                 # the scene jumped and jumped again: a flash (or very fast cutting), not a cut
                 persist = 0.0
@@ -97,25 +136,8 @@ class VideoExtractor:
                     flash = min(p.hist_delta, row.hist_delta)
             self._rows.append((p.motion, persist, flash, p.cx, p.cspread))
         self._prev_bright2 = self._prev_bright
-        self._prev_bright = bright
+        self._prev_bright = row.bright
         self._pending = row
-        self._prev = f16
-        self._prev_hist = hist
-
-    def _centroid(self, diff: np.ndarray, motion: float) -> tuple[float, float]:
-        if motion < MOTION_FLOOR:
-            return np.nan, np.nan
-        d = diff * self._mask
-        thr = float(np.percentile(d[d > 0], 95)) if np.any(d > 0) else 0.0
-        d = np.where(d >= max(thr, 1.0), d, 0.0)
-        col = d.sum(axis=0)
-        total = float(col.sum())
-        if total <= 0:
-            return np.nan, np.nan
-        p = col / total
-        cx = float(np.dot(p, self._xs))
-        spread = float(np.sqrt(max(0.0, np.dot(p, self._xs**2) - cx * cx)))
-        return cx, spread
 
     def result(self, duration_s: float) -> dict[str, np.ndarray]:
         n = int(np.ceil(duration_s / self.hop_s)) if duration_s > 0 else 0
