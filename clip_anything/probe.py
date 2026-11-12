@@ -16,6 +16,15 @@ from .errors import FFmpegMissing, InputError
 
 EXTRA_PATHS = ["/opt/homebrew/opt/ffmpeg-full/bin", "/usr/local/opt/ffmpeg-full/bin"]
 
+
+def _extra_paths() -> list[str]:
+    """Keg-only ffmpeg-full locations; CLIP_ANYTHING_EXTRA_PATHS overrides (empty = none)."""
+    env = os.environ.get("CLIP_ANYTHING_EXTRA_PATHS")
+    if env is None:
+        return EXTRA_PATHS
+    return [p for p in env.split(os.pathsep) if p]
+
+
 INSTALL_HELP = {
     "Darwin": "brew install ffmpeg        (captions need libass: brew install ffmpeg-full)",
     "Linux": "sudo apt install ffmpeg    (or your distro's package manager)",
@@ -91,7 +100,7 @@ def _find(name: str) -> str | None:
     found = shutil.which(name)
     if found:
         return found
-    for extra in EXTRA_PATHS:
+    for extra in _extra_paths():
         cand = Path(extra) / name
         if cand.is_file() and os.access(cand, os.X_OK):
             return str(cand)
@@ -109,17 +118,7 @@ def _version_of(ffmpeg: str) -> tuple[int, int]:
     return int(m.group(1)), int(m.group(2))
 
 
-def preflight() -> FFmpegCaps:
-    """Locate ffmpeg/ffprobe, check version >= 5, detect the ass filter."""
-    ffmpeg = _find("ffmpeg")
-    ffprobe = _find("ffprobe")
-    if not ffmpeg or not ffprobe:
-        raise FFmpegMissing("ffmpeg/ffprobe not found on PATH", install_help())
-    version = _version_of(ffmpeg)
-    if version < (5, 0):
-        raise FFmpegMissing(
-            f"ffmpeg {version[0]}.{version[1]} is too old (need >= 5.0)", install_help()
-        )
+def _has_ass_filter(ffmpeg: str) -> bool:
     filters = subprocess.run(
         [ffmpeg, "-hide_banner", "-filters"],
         capture_output=True,
@@ -127,7 +126,40 @@ def preflight() -> FFmpegCaps:
         check=False,
         **_popen_kwargs(),
     ).stdout
-    captions = bool(re.search(r"^\s*\S+\s+ass\s", filters, re.M))
+    return bool(re.search(r"^\s*\S+\s+ass\s", filters, re.M))
+
+
+def _full_build() -> tuple[str, str] | None:
+    """A keg-only `ffmpeg-full` (brew) with libass, if installed: preferred for captions."""
+    for extra in _extra_paths():
+        f, p = Path(extra) / "ffmpeg", Path(extra) / "ffprobe"
+        if f.is_file() and p.is_file() and os.access(f, os.X_OK):
+            return str(f), str(p)
+    return None
+
+
+def preflight() -> FFmpegCaps:
+    """Locate ffmpeg/ffprobe, check version >= 5, detect the ass filter. When the PATH build
+    lacks libass but a keg-only ffmpeg-full exists, use that one."""
+    ffmpeg = _find("ffmpeg")
+    ffprobe = _find("ffprobe")
+    if not ffmpeg or not ffprobe:
+        raise FFmpegMissing("ffmpeg/ffprobe not found on PATH", install_help())
+    captions = _has_ass_filter(ffmpeg)
+    if not captions:
+        full = _full_build()
+        if (
+            full
+            and full[0] != ffmpeg
+            and _version_of(full[0]) >= (5, 0)
+            and _has_ass_filter(full[0])
+        ):
+            ffmpeg, ffprobe, captions = full[0], full[1], True
+    version = _version_of(ffmpeg)
+    if version < (5, 0):
+        raise FFmpegMissing(
+            f"ffmpeg {version[0]}.{version[1]} is too old (need >= 5.0)", install_help()
+        )
     flag = "-/filter_complex" if version >= (7, 0) else "-filter_complex_script"
     tonemap = False
     if version >= (8, 0):

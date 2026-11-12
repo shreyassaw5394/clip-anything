@@ -35,6 +35,10 @@ class Clip:
     error: str | None = None
     render_s: float | None = None
     snap: dict = field(default_factory=dict)
+    facecam: dict | None = None  # {x,y,w,h fractions, corner, confidence} when layout=facecam
+    captions_path: str | None = None  # sidecar .ass next to the clip (also when libass missing)
+    transcript: str | None = None
+    speech: dict = field(default_factory=dict)  # {words, bonus, phrases, shouts, model_s, reason}
 
 
 @dataclass

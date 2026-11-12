@@ -145,6 +145,110 @@ def analyse_signals(
     return arrays
 
 
+def _speech_stage(
+    info: MediaInfo,
+    caps: FFmpegCaps,
+    opts: Options,
+    sig: Signals,
+    cands: list,
+    report: Report,
+    on_event: OnEvent | None,
+    cancel: threading.Event,
+) -> dict[int, object]:
+    """Transcribe the candidate windows only (never the whole file); excitement bonus into the
+    score; returns {candidate id: Transcript}. Any problem -> one warning, speech skipped."""
+    from .speech import clip_audio, excitement_bonus, load_model, transcribe
+
+    sp = opts.speech
+    out: dict[int, object] = {}
+    if not cands or not info.has_audio:
+        return out
+    t0 = time.time()
+    emit(on_event, Event("speech", "start", 0, len(cands), "clips"))
+    model, reason = load_model(sp.model, allow_download=sp.yes)
+    if model is None:
+        report.warnings.append(Warning("speech", "captions_off", f"captions skipped: {reason}"))
+        report.stages.append(Stage("speech", "skipped", round(time.time() - t0, 3), reason))
+        emit(on_event, Event("speech", "skipped", message=reason))
+        return out
+    rms = sig.arrays.get("audio.rms_db")
+    model_s = 0.0
+    for i, c in enumerate(cands, start=1):
+        if cancel.is_set():
+            break
+        pcm = clip_audio(info.path, caps, c.start, c.end - c.start, opts.analysis.sample_rate)
+        tr = transcribe(model, pcm, sp, opts.analysis.sample_rate)
+        model_s += tr.model_s
+        window = None
+        if rms is not None:
+            window = rms[sig.index_of(c.start) : sig.index_of(c.end) + 1]
+        bonus, detail = excitement_bonus(tr, sp, window, sig.hop_s)
+        c.components["speech"] = bonus
+        c.score = round(c.score + opts.scoring.w_speech * bonus, 4)
+        c.features["speech"] = {
+            "words": len(tr.words),
+            "bonus": bonus,
+            **detail,
+            "model_s": tr.model_s,
+            "reason": tr.reason,
+        }
+        out[c.id] = tr
+        emit(on_event, Event("speech", "progress", i, len(cands), "clips"))
+    spoken = sum(1 for tr in out.values() if getattr(tr, "speech", False))
+    detail = f"{spoken}/{len(out)} with speech, model {model_s:.1f}s ({sp.model})"
+    report.stages.append(Stage("speech", "ok", round(time.time() - t0, 3), detail))
+    report.timings["speech_model_s"] = round(model_s, 3)
+    emit(on_event, Event("speech", "done", len(cands), len(cands), "clips", message=detail))
+    return out
+
+
+def _facecam_stage(
+    info: MediaInfo, caps: FFmpegCaps, opts: Options, report: Report, on_event: OnEvent | None
+):
+    from .facecam import detect_facecam
+
+    t0 = time.time()
+    emit(on_event, Event("facecam", "start"))
+    try:
+        fc = detect_facecam(info, caps)
+    except Exception as exc:  # optional layer: never blocks a clip
+        report.warnings.append(Warning("facecam", "facecam_error", f"facecam detect: {exc}"))
+        fc = None
+    detail = f"{fc.corner} conf {fc.confidence:.2f}" if fc else "none"
+    report.stages.append(Stage("facecam", "ok", round(time.time() - t0, 3), detail))
+    emit(on_event, Event("facecam", "done", message=detail))
+    return fc
+
+
+def _write_captions(report: Report, transcripts: dict, opts: Options, caps: FFmpegCaps, stem: str):
+    from .captions import build_ass, write_ass
+    from .render import clip_filename
+
+    out_dir = Path(opts.render.out_dir)
+    n = 0
+    for c in report.clips:
+        tr = transcripts.get(c.candidate_id)
+        if tr is None or not tr.speech:
+            continue
+        name = clip_filename(stem, c.rank, c.start)
+        text = build_ass(
+            tr.words, opts.speech, opts.render.width, opts.render.height, c.end - c.start
+        )
+        c.captions_path = str(write_ass(out_dir / (name[:-4] + ".ass"), text))
+        c.captions = True
+        c.transcript = tr.text
+        n += 1
+    if n and not caps.captions:
+        report.warnings.append(
+            Warning(
+                "render",
+                "no_libass",
+                f"ffmpeg has no libass: {n} caption file(s) written next to the clips, "
+                "not burned in (macOS: brew install ffmpeg-full)",
+            )
+        )
+
+
 def run(
     video: str | os.PathLike,
     opts: Options | None = None,
@@ -217,11 +321,21 @@ def run(
 
     emit(on_event, Event("score", "start"))
     t0 = time.time()
+    speech_on = (opts.speech.captions or opts.speech.rank) and info.has_audio
+    n_select = opts.clips.count * 3 if (speech_on and opts.speech.rank) else opts.clips.count
     top, total, _sm = select_candidates(
-        sig, opts.scoring, opts.clips.count, opts.clips.min_s, opts.clips.max_s
+        sig, opts.scoring, n_select, opts.clips.min_s, opts.clips.max_s
     )
     report.candidates_total = total
     report.stages.append(Stage("score", "ok", round(time.time() - t0, 3), f"{total} candidates"))
+    transcripts: dict = {}
+    if speech_on and top:
+        transcripts = _speech_stage(info, caps, opts, sig, top, report, on_event, cancel)
+        if transcripts:
+            top = sorted(top, key=lambda c: c.score, reverse=True)[: opts.clips.count]
+    facecam = None
+    if opts.layout.facecam == "auto" and top and not opts.render.dry_run:
+        facecam = _facecam_stage(info, caps, opts, report, on_event)
     report.signals = {
         "cache_path": str(cache.path("signals.npz")) if cache.enabled else "",
         "names": sorted(sig.arrays),
@@ -242,6 +356,11 @@ def run(
                 snap=c.snap,
                 crop=crop.to_dict(),
                 status="pending",
+                layout="facecam" if facecam else "gameplay",
+                facecam=facecam.to_dict() if facecam else None,
+                speech=c.features.get("speech", {})
+                if isinstance(c.features.get("speech"), dict)
+                else {},
             )
         )
     emit(on_event, Event("score", "done", message=f"{len(top)} clips from {total} candidates"))
@@ -259,6 +378,8 @@ def run(
 
     out_dir = Path(opts.render.out_dir)
     report.out_dir = str(out_dir)
+    if transcripts and opts.speech.captions and not opts.render.dry_run:
+        _write_captions(report, transcripts, opts, caps, Path(info.path).stem)
     if opts.render.dry_run:
         for c in report.clips:
             c.status = "skipped"

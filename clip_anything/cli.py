@@ -42,6 +42,18 @@ def main(
     no_cache: Annotated[bool, typer.Option("--no-cache", help="Ignore signal cache")] = False,
     force: Annotated[bool, typer.Option("--force", help="Overwrite existing clips")] = False,
     workers: Annotated[int | None, typer.Option("--workers", help="Parallel renders")] = None,
+    yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Allow the one-time Whisper model download")
+    ] = False,
+    download_models: Annotated[
+        bool, typer.Option("--download-models", help="Same as --yes (download, then continue)")
+    ] = False,
+    whisper_model: Annotated[
+        str | None, typer.Option("--whisper-model", help="tiny.en | base.en | small ...")
+    ] = None,
+    speech_rank: Annotated[
+        bool, typer.Option("--speech-rank", help="Transcribe top 3N candidates, re-rank")
+    ] = False,
     version: Annotated[
         bool | None, typer.Option("--version", callback=_version, is_eager=True)
     ] = None,
@@ -79,7 +91,12 @@ def main(
                 "force": force,
                 "workers": workers,
             },
-            "speech": {"captions": False if no_captions else None},
+            "speech": {
+                "captions": False if no_captions else None,
+                "yes": True if (yes or download_models) else None,
+                "model": whisper_model,
+                "rank": True if speech_rank else None,
+            },
             "vision": {"enabled": vision},
             "layout": {"facecam": facecam, "crop": crop},
             "analysis": {"cache": False if no_cache else None},
@@ -91,6 +108,15 @@ def main(
     if opts.clips.min_s > opts.clips.max_s or opts.clips.min_s <= 0:
         err.print("[red]--min must be > 0 and <= --max[/red]")
         raise typer.Exit(EXIT_BAD_INPUT)
+
+    # Whisper weights: the only network use. Ask once on a TTY, never silently.
+    if (opts.speech.captions or opts.speech.rank) and not opts.speech.yes and not as_json:
+        from .speech import MODEL_SIZES_MB, model_status
+
+        if model_status(opts.speech.model) == "download" and sys.stdin.isatty():
+            mb = MODEL_SIZES_MB.get(opts.speech.model, "?")
+            if typer.confirm(f"Download Whisper {opts.speech.model} (~{mb} MB) for captions?"):
+                opts.speech.yes = True
 
     from .pipeline import run
     from .ui import ProgressUI, print_summary
