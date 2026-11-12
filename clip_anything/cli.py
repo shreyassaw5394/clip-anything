@@ -65,6 +65,14 @@ def main(
     resume: Annotated[
         bool, typer.Option("--resume/--no-resume", help="Continue an interrupted analysis")
     ] = True,
+    min_score: Annotated[
+        float | None,
+        typer.Option(
+            "--min-score",
+            help="Action bar 0..1 a moment must clear to become a clip (default 0.5; "
+            "--count is a maximum). 0 = rank the file against itself only",
+        ),
+    ] = None,
 ) -> None:
     """Long gameplay recording in, top N vertical highlight clips + report.json out."""
     from rich.console import Console
@@ -107,6 +115,7 @@ def main(
             },
             "vision": {"enabled": vision},
             "layout": {"facecam": facecam, "crop": crop},
+            "scoring": {"min_evidence": min_score},
             "analysis": {
                 "cache": False if no_cache else None,
                 "audio_track": audio_track,
@@ -119,6 +128,9 @@ def main(
         raise typer.Exit(EXIT_BAD_INPUT) from None
     if opts.clips.min_s > opts.clips.max_s or opts.clips.min_s <= 0:
         err.print("[red]--min must be > 0 and <= --max[/red]")
+        raise typer.Exit(EXIT_BAD_INPUT)
+    if not 0.0 <= opts.scoring.min_evidence <= 1.0:
+        err.print("[red]--min-score must be between 0 and 1[/red]")
         raise typer.Exit(EXIT_BAD_INPUT)
 
     # Whisper weights: the only network use. Ask once on a TTY, never silently.
