@@ -26,6 +26,8 @@ class AnalysisOptions:
     hwaccel: str = "auto"  # auto | none | <ffmpeg hwaccel name>; analysis proxy decode only
     cache: bool = True
     cache_dir: str | None = None
+    audio_track: str = "auto"  # auto (mix of non-silent tracks) | all | game | mic | <N>
+    resume: bool = True  # pick up <stage>.partial.npz checkpoints left by an interrupted run
 
 
 @dataclass
@@ -38,13 +40,13 @@ class ScoringOptions:
     w_cut: float = 0.15
     w_speech: float = 0.3
     # score = w_mean * weighted mean + w_max * max + w_agree * sqrt(audio * motion)
-    w_mean: float = 0.3
-    w_max: float = 0.3
+    w_mean: float = 0.2
+    w_max: float = 0.4
     w_agree: float = 0.4
     z_soft: float = 4.0  # rolling z-score -> tanh(z / z_soft): no hard saturation at 1.0
     scale_frac: float = 0.25  # sigma floor = scale_frac * global (p90 - p50): flat regions
     local_window_s: float = 300.0
-    smooth_sigma_s: float = 1.0
+    smooth_sigma_s: float = 0.5  # a 1 s burst must survive smoothing as a peak
     prominence: float = 0.1
     height_pct: float = 50.0
     min_height: float = 0.1
@@ -63,11 +65,14 @@ class ScoringOptions:
     card_s: float = 10.0  # rolling-median span for the card test (page flips are not motion)
     # intro/outro: first/last edge_s are scaled by edge_factor unless agreement is strong
     edge_s: float = 30.0
-    edge_factor: float = 0.5
+    edge_factor: float = 0.8
     edge_agree: float = 0.7
-    # --count is a maximum: windows below min_score are never returned
-    min_score: float = 0.35
+    # --count is a maximum: windows below max(min_score, min_score_rel * best) are never
+    # returned (absolute floor for filler, relative floor so a file's own scale counts)
+    min_score: float = 0.2
+    min_score_rel: float = 0.35
     zero_start_ratio: float = 2.0  # a clip starting at 0:00 needs 2x the median top score
+    zero_start_peak_s: float = 10.0  # ...when its peak is inside the first 10 s (an intro)
 
 
 @dataclass

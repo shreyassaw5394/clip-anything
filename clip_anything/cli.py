@@ -27,7 +27,9 @@ def _version(value: bool) -> None:
 
 @app.command()
 def main(
-    video: Annotated[Path, typer.Argument(help="Input recording (mp4/mkv/mov...)")],
+    video: Annotated[
+        list[Path], typer.Argument(help="Recording(s): file, several files or a folder")
+    ],
     count: Annotated[int, typer.Option("--count", "-n", help="Clips to produce")] = 10,
     min_s: Annotated[float, typer.Option("--min", help="Min clip length (s)")] = 15.0,
     max_s: Annotated[float, typer.Option("--max", help="Max clip length (s)")] = 45.0,
@@ -57,6 +59,12 @@ def main(
     version: Annotated[
         bool | None, typer.Option("--version", callback=_version, is_eager=True)
     ] = None,
+    audio_track: Annotated[
+        str, typer.Option("--audio-track", help="auto | all | game | mic | N (stream number)")
+    ] = "auto",
+    resume: Annotated[
+        bool, typer.Option("--resume/--no-resume", help="Continue an interrupted analysis")
+    ] = True,
 ) -> None:
     """Long gameplay recording in, top N vertical highlight clips + report.json out."""
     from rich.console import Console
@@ -99,7 +107,11 @@ def main(
             },
             "vision": {"enabled": vision},
             "layout": {"facecam": facecam, "crop": crop},
-            "analysis": {"cache": False if no_cache else None},
+            "analysis": {
+                "cache": False if no_cache else None,
+                "audio_track": audio_track,
+                "resume": resume,
+            },
         }
         opts = Options.from_layers(file_layer, cli_layer)
     except InputError as exc:
@@ -125,7 +137,8 @@ def main(
     ui = ProgressUI(err, enabled=not as_json)
     try:
         with ui:
-            report = run(video, opts, on_event=ui.on_event, cancel=cancel, caps=caps)
+            target = video[0] if len(video) == 1 else video
+            report = run(target, opts, on_event=ui.on_event, cancel=cancel, caps=caps)
     except KeyboardInterrupt:
         cancel.set()
         err.print("[yellow]cancelled[/yellow]")
