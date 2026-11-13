@@ -11,6 +11,7 @@ import threading
 import webbrowser
 from pathlib import Path
 
+from .data import Prefs
 from .server import AppServer
 
 VIDEO_SUFFIXES = (".mp4", ".mkv", ".mov", ".webm", ".ts", ".m4v", ".avi", ".flv", ".mts")
@@ -31,9 +32,9 @@ class MainThreadPicker:
     def __init__(self) -> None:
         self.requests: queue.Queue[tuple[str, queue.Queue]] = queue.Queue()
 
-    def __call__(self, kind: str) -> list[str]:
+    def __call__(self, kind: str, initial: str = "") -> list[str]:
         reply: queue.Queue = queue.Queue()
-        self.requests.put((kind, reply))
+        self.requests.put(((kind, initial), reply))
         try:
             return reply.get(timeout=600)
         except queue.Empty:
@@ -46,12 +47,12 @@ class MainThreadPicker:
             except queue.Empty:
                 continue
             try:
-                reply.put(tk_pick(kind))
+                reply.put(tk_pick(*kind) if isinstance(kind, tuple) else tk_pick(kind))
             except Exception:  # noqa: BLE001 - no tkinter / no display: the UI says so
                 reply.put([])
 
 
-def tk_pick(kind: str) -> list[str]:
+def tk_pick(kind: str, initial: str = "") -> list[str]:
     import tkinter as tk
     from tkinter import filedialog
 
@@ -69,7 +70,8 @@ def tk_pick(kind: str) -> list[str]:
         title = (
             "Choose a folder of recordings" if kind == "folder" else "Where should the clips go?"
         )
-        path = filedialog.askdirectory(title=title)
+        kwargs = {"initialdir": initial} if initial and Path(initial).is_dir() else {}
+        path = filedialog.askdirectory(title=title, **kwargs)
         return [path] if path else []
     finally:
         root.destroy()
@@ -102,11 +104,12 @@ class WebviewPicker:
 
         drop.events.drop += on_drop
 
-    def __call__(self, kind: str) -> list[str]:
+    def __call__(self, kind: str, initial: str = "") -> list[str]:
         import webview
 
         if self.window is None:
             return []
+        start = initial if initial and Path(initial).is_dir() else ""
         if kind == "files":
             res = self.window.create_file_dialog(
                 webview.OPEN_DIALOG,
@@ -117,7 +120,7 @@ class WebviewPicker:
                 ),
             )
         else:
-            res = self.window.create_file_dialog(webview.FOLDER_DIALOG)
+            res = self.window.create_file_dialog(webview.FOLDER_DIALOG, directory=start)
         return [str(p) for p in (res or [])]
 
 
@@ -125,22 +128,35 @@ def launch(*, window: str = "auto", port: int = 0, open_ui: bool = True) -> int:
     """Run until the window closes (webview) or Ctrl-C / Quit (browser). Returns an exit code."""
     use_webview = window == "webview" or (window == "auto" and webview_available())
     stop = threading.Event()
+    prefs = Prefs()
 
     if use_webview:
         import webview
 
         picker = WebviewPicker()
         server = AppServer(
-            port=port, picker=picker, window="webview", on_quit=lambda: _close(picker)
-        )
+            port=port, picker=picker, prefs=prefs, window="webview",
+            on_quit=lambda: _close(picker),
+        )  # fmt: skip
         server.start()
         icon = _icon()
+        width, height = prefs.window() or (1280, 820)
         win = webview.create_window(
-            WINDOW_TITLE, server.url, width=1280, height=820, min_size=(760, 560),
-            background_color="#f1efe9", text_select=True,
+            WINDOW_TITLE, server.url, width=width, height=height, min_size=(760, 560),
+            background_color=_background(), text_select=True,
         )  # fmt: skip
         picker.window = win
         win.events.loaded += picker.wire_drop
+        size = {"width": width, "height": height}
+
+        def on_resized(w, h) -> None:
+            size.update(width=int(w), height=int(h))
+
+        def on_closing() -> None:
+            prefs.set(window=dict(size))
+
+        win.events.resized += on_resized
+        win.events.closing += on_closing
         try:
             webview.start(icon=str(icon) if icon else None)
         finally:
@@ -148,7 +164,7 @@ def launch(*, window: str = "auto", port: int = 0, open_ui: bool = True) -> int:
         return 0
 
     picker = MainThreadPicker()
-    server = AppServer(port=port, picker=picker, window="browser", on_quit=stop.set)
+    server = AppServer(port=port, picker=picker, prefs=prefs, window="browser", on_quit=stop.set)
     server.start()
     print(f"Clip Anything is running at {server.url}", flush=True)
     print("Leave this window open while you use it; press Ctrl-C to quit.", flush=True)
@@ -166,6 +182,23 @@ def launch(*, window: str = "auto", port: int = 0, open_ui: bool = True) -> int:
 def _close(picker: WebviewPicker) -> None:
     if picker.window is not None:
         picker.window.destroy()
+
+
+def _background() -> str:
+    """The window's first paint matches the page: paper, or ink when macOS is in dark mode."""
+    if sys.platform == "darwin":
+        try:
+            import subprocess
+
+            res = subprocess.run(
+                ["defaults", "read", "-g", "AppleInterfaceStyle"],
+                capture_output=True, text=True, check=False, timeout=2,
+            )  # fmt: skip
+            if "Dark" in (res.stdout or ""):
+                return "#15161a"
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return "#f1efe9"
 
 
 def _icon() -> Path | None:
