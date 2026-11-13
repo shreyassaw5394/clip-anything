@@ -35,10 +35,13 @@ MAX_BODY = 256 * 1024
 MAX_JOBS = 50
 SSE_HEARTBEAT_S = 15.0
 CSP = (
-    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+    "default-src 'self'; script-src 'self'{eval}; style-src 'self'; img-src 'self' data:; "
     "media-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; "
     "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 )
+# the native window's bridge (pywebview) evaluates its own scripts with eval; the browser
+# mode keeps the strict policy. Neither allows inline code or styles.
+CSP_BY_WINDOW = {"browser": CSP.format(eval=""), "webview": CSP.format(eval=" 'unsafe-eval'")}
 STATIC_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
@@ -197,6 +200,7 @@ class AppServer:
         with self.lock:
             if any(j.running for j in self.jobs.values()):
                 raise ApiError(409, "A run is already in progress.")
+            req.force = self._needs_rerender(req)
             job = Job(req, self.runner)
             problem = job.prepare_ai()
             if problem:
@@ -212,6 +216,26 @@ class AppServer:
         threading.Thread(target=self._remember, args=(job,), daemon=True).start()
         return job
 
+    def _needs_rerender(self, req: JobRequest) -> bool:
+        """Clips are named by rank and time, so a re-run with the same look (captions, facecam,
+        crop, length) can keep identical files and finish in seconds; a changed look renders
+        them again. Unknown previous settings (first run on this folder): overwrite."""
+        out = str(Path(req.out_dir).resolve()) if req.out_dir else ""
+        previous = None
+        for j in sorted(self.jobs.values(), key=lambda j: j.created, reverse=True):
+            if j.state == "done" and str(j.out_dir() or "") == out:
+                previous = j.request
+                break
+        if previous is None:
+            for item in self.recent.load():
+                if str(Path(str(item.get("out_dir", ""))).resolve()) == out:
+                    previous = JobRequest.from_json(item)
+                    break
+        if previous is None:
+            return True
+        same = (previous.captions, previous.facecam, previous.crop, previous.length, previous.ai)
+        return same != (req.captions, req.facecam, req.crop, req.length, req.ai)
+
     def _remember(self, job: Job) -> None:
         job.thread.join() if job.thread else None
         if job.state == "done" and job.report is not None:
@@ -226,7 +250,7 @@ class AppServer:
                     "facecam": req.facecam,
                     "crop": req.crop,
                     "ai": req.ai,
-                    "clips": len(job.report.ok_clips),
+                    "clips": job.result()["ok"],
                     "name": job.result()["input"]["name"],
                 }
             )
@@ -293,13 +317,14 @@ class AppServer:
         return [
             {
                 "key": s.key,
-                "label": s.label,
+                "label": SETUP_LABELS.get(s.key, (s.label, ""))[0],
+                "why": SETUP_LABELS.get(s.key, ("", ""))[1],
                 "ok": s.ok,
-                "detail": s.detail,
+                "detail": _sentence(s.detail),
                 "fix": " ".join(s.fix) if s.fix else "",
                 "download": bool(s.action and not s.fix),
-                "note": s.note,
-                "required": s.required,
+                "note": _sentence(s.note),
+                "required": s.required or s.key in ("ffmpeg", "python"),
             }
             for s in steps
         ]
@@ -335,11 +360,26 @@ class AppServer:
             again = checks[key]()
             return {
                 "ok": again.ok,
-                "detail": again.detail + (f" ({err})" if err and not again.ok else ""),
+                "detail": _sentence(again.detail) + (f" ({err})" if err and not again.ok else ""),
                 "output": output[-4000:],
             }
         finally:
             self._install_lock.release()
+
+
+SETUP_LABELS = {
+    "ffmpeg": ("Video tools (ffmpeg)", "Reads your recording and renders the clips. Required."),
+    "python": ("Python", "Runs the tool. Required."),
+    "captions": ("Captions (speech recognition)", "Adds burned-in captions when someone speaks."),
+    "whisper": ("Speech model (base.en)", "The model captions use; downloaded once, about 150 MB."),
+    "ollama": ("Ollama (local AI)", "Runs a small AI model on this computer for titles and picks."),
+    "vision": ("Local AI model (qwen3-vl:4b)", "The model Ollama uses to look at frames; ~3 GB."),
+}
+
+
+def _sentence(text: str) -> str:
+    text = (text or "").strip()
+    return text[:1].upper() + text[1:] if text else ""
 
 
 def _run_capture(argv: list[str]) -> tuple[int, str]:
@@ -376,6 +416,13 @@ class _Server(ThreadingHTTPServer):
         self.app = app
         super().__init__(addr, handler)
 
+    def handle_error(self, request, client_address) -> None:
+        """A <video> element aborts range requests all the time: not worth a traceback."""
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError)):
+            return
+        super().handle_error(request, client_address)
+
 
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -395,7 +442,8 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         if length is not None:
             self.send_header("Content-Length", str(length))
-        self.send_header("Content-Security-Policy", CSP)
+        csp = CSP_BY_WINDOW.get(self.app.window, CSP_BY_WINDOW["browser"])
+        self.send_header("Content-Security-Policy", csp)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")

@@ -104,7 +104,8 @@
     item("Captions", c.captions && c.whisper === "ready", c.captions ? "Download" : "Set up");
     item("AI", c.ai.ok, "Set up");
     $("captions").disabled = !c.captions;
-    if (!c.captions) $("captions").checked = false;
+    if (!c.captions) { $("captions").checked = false; $("captions-note").hidden = false; $("captions-note").textContent = "Not in this install: see Set up."; }
+    else if (c.whisper === "download") { $("captions-note").hidden = false; $("captions-note").textContent = "The first captioned run downloads the ~150 MB speech model once."; }
     $("count").max = String(c.max_count || 20);
     $("version").textContent = "v" + c.version;
     $("quit").hidden = c.window !== "browser";
@@ -113,7 +114,8 @@
       $("ai-cloud").textContent = "An API key for " + c.ai.host + " is set: with AI on, frames and spoken lines of the candidate moments leave this computer and your key is used for the run.";
       $("ai-note").textContent = "Titles, hooks and a second opinion on the picks.";
     } else if (!c.ai.ok) {
-      $("ai-note").textContent = "Titles, hooks and a second opinion on the picks from a local model. Not set up yet: " + c.ai.reason;
+      $("ai-note").textContent = "Titles, hooks and a second opinion on the picks from a local model. Not set up yet: install Ollama and a model from Set up, or set an OpenAI or Anthropic key in your environment.";
+      $("ai").disabled = true;
     }
     renderRecent(c.recent || []);
   }
@@ -168,7 +170,7 @@
       const first = state.inputs[0] || "";
       state.outDir = first ? join(isVideoName(first) ? dirname(first) : first, "clips") : "";
     }
-    $("out-dir").textContent = state.outDir || "—";
+    $("out-dir").textContent = state.outDir || "a clips folder next to the recording";
     $("home-problem").textContent = "";
   }
 
@@ -187,12 +189,20 @@
     const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
     for (const ev of ["dragenter", "dragover"]) drop.addEventListener(ev, (e) => { stop(e); drop.dataset.state = "over"; });
     drop.addEventListener("dragleave", (e) => { stop(e); drop.dataset.state = state.inputs.length ? "chosen" : "empty"; });
+    let nativeDrop = 0;
+    window.caDrop = (paths) => { nativeDrop = Date.now(); if (Array.isArray(paths) && paths.length) setInputs(paths.map(String)); };
     drop.addEventListener("drop", (e) => {
       stop(e);
       const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
       const paths = files.map((f) => f.pywebviewFullPath || f.path || "").filter(Boolean);
       if (paths.length) { setInputs(paths); return; }
       drop.dataset.state = state.inputs.length ? "chosen" : "empty";
+      if (state.caps && state.caps.window === "webview") {
+        // the native window hands the paths to caDrop a moment later
+        const at = Date.now();
+        setTimeout(() => { if (nativeDrop < at) toast("Could not read where those files live. Use Choose instead."); }, 1500);
+        return;
+      }
       toast("This browser hides where dropped files live. Use Choose instead.");
       pick("files");
     });
@@ -374,7 +384,7 @@
     let sub = total === 0 ? "No moment in " + (r.input.name || "this recording") + " cleared the action bar."
       : r.ok + " of " + total + (total === 1 ? " clip" : " clips") + " from " + (r.input.name || "the recording");
     if (r.input.duration_s) sub += " (" + mmss(r.input.duration_s) + ")";
-    sub += ", in " + (secs < 60 ? secs + " s" : Math.round(secs / 60) + " min") + (r.cached ? " using the saved analysis" : "") + ".";
+    sub += ", in " + (secs < 60 ? secs + " s" : Math.round(secs / 60) + " min") + (r.cached ? " using the saved analysis" : "") + (r.kept ? " (" + r.kept + " unchanged from last time)" : "") + ".";
     $("results-sub").textContent = sub;
     const notes = $("result-notes");
     notes.textContent = "";
@@ -392,17 +402,18 @@
       const video = node.querySelector(".card-video");
       if (c.file) video.src = tokened("/clips/" + job.id + "/" + encodeURIComponent(c.file));
       else { video.remove(); node.querySelector(".card-play").remove(); }
-      node.querySelector(".rank").textContent = String(c.rank).padStart(2, "0");
+      node.querySelector(".rank").textContent = String(c.rank);
       node.querySelector(".time").textContent = mmss(c.start) + "–" + mmss(c.end);
       node.querySelector(".score").textContent = "score " + c.score.toFixed(2);
       node.querySelector(".card-title").textContent = c.title || "";
-      node.querySelector(".card-why").textContent = c.why || "";
+      node.querySelector(".why").textContent = c.why || "";
+      node.dataset.peak = String(c.peak_offset || 0);
       node.querySelector(".card-hook").textContent = c.hook || "";
       const label = "Clip " + c.rank + ", " + mmss(c.start) + " to " + mmss(c.end) + (c.title ? ", " + c.title : "");
       node.setAttribute("aria-label", label);
       if (c.file) wireCard(node, video);
       else { node.querySelector('[data-act="open"]').hidden = true; node.querySelector('[data-act="reveal"]').hidden = true; node.querySelector('[data-act="delete"]').hidden = true; }
-      node.querySelector(".card-actions").addEventListener("click", (e) => {
+      node.querySelector(".card-body").addEventListener("click", (e) => {
         const b = e.target.closest("[data-act]");
         if (b) cardAction(b.dataset.act, c, node);
       });
@@ -417,9 +428,12 @@
     const media = node.querySelector(".card-media");
     const setPlayed = () => { if (video.duration) media.style.setProperty("--played", (video.currentTime / video.duration * 100) + "%"); };
     video.addEventListener("timeupdate", setPlayed);
+    // the poster is the clip's own peak frame
+    const peak = parseFloat(node.dataset.peak || "0");
+    video.addEventListener("loadedmetadata", () => { if (video.paused && video.duration) video.currentTime = Math.min(video.duration - 0.1, Math.max(0.1, peak)); }, { once: true });
     let dragging = false;
-    media.addEventListener("pointerenter", () => { if (!node.classList.contains("playing")) { video.muted = true; video.play().catch(() => {}); } });
-    media.addEventListener("pointerleave", () => { dragging = false; if (!node.classList.contains("playing")) { video.pause(); video.currentTime = 0; setPlayed(); } });
+    media.addEventListener("pointerenter", () => { if (!node.classList.contains("playing") && !reduced.matches) { video.muted = true; video.currentTime = 0; video.play().catch(() => {}); } });
+    media.addEventListener("pointerleave", () => { dragging = false; if (!node.classList.contains("playing")) { video.pause(); if (video.duration) video.currentTime = Math.min(video.duration - 0.1, Math.max(0.1, peak)); setPlayed(); } });
     const scrub = (e) => {
       const rect = media.getBoundingClientRect();
       const f = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
@@ -447,13 +461,15 @@
       if (act === "open") await api("/api/jobs/" + id + "/open", { body: { what: "file", file: clip.file } });
       else if (act === "reveal") await api("/api/jobs/" + id + "/open", { body: { what: "reveal", file: clip.file } });
       else if (act === "copy") { await copyText(clip.post || ""); toast("Copied."); }
-      else if (act === "delete") {
-        if (!confirm("Delete clip " + clip.rank + " (" + clip.file + ")? This removes the file.")) return;
+      else if (act === "delete") { node.querySelector(".card-actions").hidden = true; const c = node.querySelector(".card-confirm"); c.hidden = false; c.querySelector('[data-act="delete-yes"]').focus(); }
+      else if (act === "delete-no") { node.querySelector(".card-confirm").hidden = true; node.querySelector(".card-actions").hidden = false; node.querySelector('[data-act="delete"]').focus(); }
+      else if (act === "delete-yes") {
+        node.querySelector(".card-confirm").hidden = true; node.querySelector(".card-actions").hidden = false;
         await api("/api/jobs/" + id + "/delete", { body: { file: clip.file } });
         node.classList.add("gone");
         const v = node.querySelector("video"); if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
         for (const b of node.querySelectorAll("[data-act]")) b.disabled = true;
-        node.querySelector(".card-why").textContent = "Deleted.";
+        node.querySelector(".why").textContent = "Deleted.";
         toast("Deleted " + clip.file);
       }
     } catch (e) { toast(e.message); }
@@ -492,6 +508,7 @@
     node.dataset.key = s.key;
     node.querySelector(".step-name").textContent = s.label + (s.required ? "" : " (optional)");
     node.querySelector(".step-mark").textContent = "";
+    node.querySelector(".step-why").textContent = s.why || "";
     node.querySelector(".step-detail").textContent = (s.ok ? "Ready: " : "") + (s.detail || "");
     node.querySelector(".step-note").textContent = s.ok ? "" : (s.note || "");
     node.querySelector(".step-label").setAttribute("aria-label", (s.ok ? "Ready: " : "Not ready: ") + s.label);

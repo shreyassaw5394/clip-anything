@@ -10,7 +10,8 @@ Downloads: the **Releases** page of the repository
 (`clip-anything-macos-arm64.dmg` / `.zip` for Apple silicon Macs, `clip-anything-windows-x86_64.zip`
 for Windows 10/11, `clip-anything-macos-x86_64.zip` for Intel Macs when that build is present).
 
-(Screenshot to follow: the window is a single column of buttons, options, a progress bar and the clip list.)
+From a source install the same app is `clip-anything app` (or `clip-anything-gui`); add the
+`[app]` extra (`uv tool install "clip-anything[app]"`) for the native window.
 
 ## The builds are not signed yet
 
@@ -46,18 +47,32 @@ file's SHA-256 against `SHA256SUMS.txt` on the release page.
 
 ## Using it
 
-- **Choose recording...** picks one or more video files; **Choose folder of recordings...** treats
-  a folder as one session (clips never cross a file boundary).
-- **Clips go to...** defaults to a `clips` folder next to the recording.
-- **Number of clips** is a maximum: only moments that clear the action bar are returned.
-- **Captions** are included (faster-whisper). The first captioned run downloads the ~150 MB
-  speech model once, as the checkbox says; untick it for a fully offline run. Captions are machine
-  transcription: read them before posting.
-- **Facecam** `auto` looks for a static camera corner and stacks it above the gameplay.
-- **Vertical crop** `follow` keeps the action in frame; `center` is a plain centre crop.
-- **Cancel** stops after the current step; half-written files are removed.
-- When it finishes, the list shows each clip's time and score and **Open clips folder** opens
-  the output in Finder / Explorer. `report.json` next to the clips explains every pick.
+The app is the same tool as the command line, as a window. It runs a small local server on
+127.0.0.1 (a random port and a per-launch token, loopback only) and shows the page in a native
+window; with no native window available it opens in your default browser instead and the
+terminal says so.
+
+1. **Drop a recording** (or a folder of recordings: one session, clips never cross a file) on
+   the page, or use **Choose a recording** / **Choose a folder**. Recent runs are listed below
+   so a second pass is one click.
+2. **Settings** sit in one strip, all visible: how many clips (a maximum; only moments above the
+   action bar are returned), length (short 15–30 s, normal 15–45 s, long 30–60 s), captions when
+   there is speech, facecam stacking, crop follows the action, and **With AI** (titles, hooks and
+   a second opinion from a local Ollama model; if an OpenAI/Anthropic key is set in your
+   environment the switch says that frames and spoken lines leave the computer).
+3. **Make clips.** The run screen is one big bar with the stage name and a time estimate, and
+   the action-score curve draws as the analysis streams; the picked moments pop in as markers.
+   **Cancel** (or Esc) stops after the current step; half-written files are removed.
+4. **Your clips**: a grid of the vertical clips themselves. Hover to preview muted, drag across
+   a clip to scrub, press play for sound. Each card shows rank, time in the recording, score,
+   why it was picked and (with AI) the title and hook. Per clip: **Open**, **Reveal in folder**,
+   **Copy post text**, **Delete**. For the run: **Open folder**, **Re-run with different
+   settings** (uses the saved analysis: seconds), **Export report** (`report.json`).
+5. **Set up** checks ffmpeg, captions and the optional local AI, one line each, with an install
+   button per missing item that shows the exact command and asks before running it.
+
+Everything is keyboard-reachable; the interface honours reduced-motion settings and works down
+to about 760 px wide.
 
 Analysis speed is the same as the CLI: a one-hour 1080p recording takes about a minute on a
 recent laptop, plus a few seconds per clip to render.
@@ -69,13 +84,13 @@ One paste installs `uv`, `ffmpeg` and the tool:
 - macOS / Linux: `curl -fsSL https://raw.githubusercontent.com/shreyassaw5394/clip-anything/main/scripts/install.sh | sh`
 - Windows (PowerShell): `irm https://raw.githubusercontent.com/shreyassaw5394/clip-anything/main/scripts/install.ps1 | iex`
 
-Then `clip-anything your-recording.mp4`. The GUI is also available from a source or `uv tool`
-install as `clip-anything-gui` (or `python -m clip_anything.gui`).
+Then `clip-anything your-recording.mp4`. The app is also there as `clip-anything app`
+(`clip-anything-gui` still works); `--browser` forces the browser, `--window` the native window.
 
 ## Building the app yourself
 
 ```
-uv sync --extra desktop
+uv sync --extra desktop --extra app     # --extra app = pywebview for the native window
 uv run python packaging/build.py        # fetches the pinned ffmpeg, runs PyInstaller, zips
 ```
 

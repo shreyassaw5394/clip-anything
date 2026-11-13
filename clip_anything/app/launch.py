@@ -79,6 +79,29 @@ class WebviewPicker:
     def __init__(self) -> None:
         self.window = None
 
+    def wire_drop(self) -> None:
+        """Dropped files reach the page as paths: pywebview exposes the full path only to a
+        Python-side DOM handler, so forward them to the page's `caDrop`."""
+        import json
+
+        win = self.window
+        if win is None:
+            return
+        try:
+            drop = win.dom.get_element("#drop")
+        except Exception:  # noqa: BLE001 - no DOM yet / no bridge: the page falls back to Choose
+            return
+        if drop is None:
+            return
+
+        def on_drop(event) -> None:
+            files = (event.get("dataTransfer") or {}).get("files") or []
+            paths = [f.get("pywebviewFullPath") for f in files if f.get("pywebviewFullPath")]
+            if paths:
+                win.evaluate_js(f"window.caDrop && window.caDrop({json.dumps(paths)})")
+
+        drop.events.drop += on_drop
+
     def __call__(self, kind: str) -> list[str]:
         import webview
 
@@ -117,6 +140,7 @@ def launch(*, window: str = "auto", port: int = 0, open_ui: bool = True) -> int:
             background_color="#f1efe9", text_select=True,
         )  # fmt: skip
         picker.window = win
+        win.events.loaded += picker.wire_drop
         try:
             webview.start(icon=str(icon) if icon else None)
         finally:
@@ -126,8 +150,8 @@ def launch(*, window: str = "auto", port: int = 0, open_ui: bool = True) -> int:
     picker = MainThreadPicker()
     server = AppServer(port=port, picker=picker, window="browser", on_quit=stop.set)
     server.start()
-    print(f"Clip Anything is running at {server.url}")
-    print("Leave this window open while you use it; press Ctrl-C to quit.")
+    print(f"Clip Anything is running at {server.url}", flush=True)
+    print("Leave this window open while you use it; press Ctrl-C to quit.", flush=True)
     if open_ui:
         webbrowser.open(server.url)
     try:

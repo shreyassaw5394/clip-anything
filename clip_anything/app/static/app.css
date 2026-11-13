@@ -11,7 +11,7 @@
   --rule:#cfcbc0;--acc:#c4105f;--acc-ink:#fff;--danger:#8f1d1d;--ok:#1f6b45;
   --display:"Barlow Condensed",ui-sans-serif,system-ui,sans-serif;
   --text:"Barlow",ui-sans-serif,system-ui,sans-serif;
-  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; /* taste-skill-ignore: install commands and file paths only */
   --m:clamp(20px,3vw,48px);
   --ease:cubic-bezier(.16,1,.3,1);--t:220ms;
   color-scheme:light
@@ -38,7 +38,8 @@ code,pre{font-family:var(--mono);font-size:.92em}
 .nav-btn{background:none;border:0;padding:8px 10px;min-height:40px;cursor:pointer;color:var(--ink-2)}
 .nav-btn[aria-current=page]{color:var(--ink);text-decoration:underline;text-underline-offset:.35em;text-decoration-thickness:3px;text-decoration-color:var(--acc)}
 .nav-btn:hover{color:var(--ink)}
-.ready{margin:0 0 0 auto;font-size:14px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap}
+.ready{margin:0 0 0 auto;font-size:14px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;align-items:baseline}
+.ready-item{white-space:nowrap}
 .ready-item b{font-weight:500;color:var(--ink)}
 .ready-item.off b{color:var(--ink-2)}
 .ready-item .link{font-size:14px}
@@ -97,6 +98,8 @@ input[type=range]{flex:1;accent-color:var(--ink);height:28px;margin:0}
 .seg-item:has(input:focus-visible){outline:3px solid var(--acc);outline-offset:2px;z-index:1}
 .check{display:flex;align-items:flex-start;gap:10px;min-height:32px;cursor:pointer;line-height:1.3;padding:4px 0}
 .check input{width:20px;height:20px;margin:1px 0 0;accent-color:var(--ink);flex:none}
+.check:has(input:disabled){color:var(--muted);cursor:default}
+.check-note{display:block;font-size:13px;color:var(--muted)}
 .field-toggles{display:grid;align-content:start;gap:2px}
 
 /* run row */
@@ -157,13 +160,15 @@ input[type=range]{flex:1;accent-color:var(--ink);height:28px;margin:0}
 .card-body{padding:12px 14px 14px;display:grid;gap:4px;align-content:start}
 .card-rank{margin:0;display:flex;align-items:baseline;gap:10px;font-variant-numeric:tabular-nums}
 .card-rank .rank{font-family:var(--display);font-weight:700;font-size:28px;line-height:1}
-.card-rank .time{font-weight:500}
-.card-rank .score{margin-left:auto;color:var(--muted);font-size:14px}
+.card-rank .time{font-weight:500;white-space:nowrap}
+.card-why .score{color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.card-why .score::after{content:" · "}
 .card-title{margin:2px 0 0;font-weight:500;font-size:17px;line-height:1.25}
 .card-title:empty,.card-hook:empty{display:none}
 .card-why{margin:0;color:var(--ink-2);font-size:14px;line-height:1.35}
 .card-hook{margin:0;color:var(--muted);font-size:14px;line-height:1.35}
-.card-actions{display:flex;flex-wrap:wrap;gap:0 14px;margin-top:6px;font-size:14px}
+.card-actions,.card-confirm{display:flex;flex-wrap:wrap;gap:0 14px;margin-top:6px;font-size:14px;align-items:center}
+.card-confirm span{font-weight:500}
 .card.failed .card-media{background:var(--paper-3)}
 .card.failed .card-media::after{content:"Render failed";position:absolute;inset:0;display:grid;place-items:center;color:var(--ink-2)}
 .card.gone{opacity:.45}
@@ -175,13 +180,14 @@ input[type=range]{flex:1;accent-color:var(--ink);height:28px;margin:0}
 .step-label{margin:0;font-weight:500;font-size:18px;display:flex;gap:10px;align-items:baseline}
 .step-mark{display:inline-block;width:14px;height:14px;border:1.5px solid var(--ink);flex:none;transform:translateY(1px)}
 .step.ok .step-mark{background:var(--ink)}
-.step-detail{margin:2px 0 0;color:var(--ink-2)}
+.step-why{margin:2px 0 0;color:var(--ink-2)}
+.step-detail{margin:2px 0 0;color:var(--muted);font-size:14px}
 .step-note{margin:2px 0 0;color:var(--muted);font-size:14px}
 .step-note:empty{display:none}
 .step-out{margin:8px 0 0;max-height:160px;overflow:auto;background:var(--paper-2);padding:8px 10px;font-size:12px;white-space:pre-wrap}
 .step-side{display:grid;gap:8px;justify-items:end;min-width:180px}
 .step-confirm{display:grid;gap:8px;justify-items:end}
-.step-cmd{margin:0;font-family:var(--mono);font-size:13px;background:var(--paper-2);padding:6px 10px;max-width:46ch;word-break:break-all;text-align:left}
+.step-cmd{margin:0;font-family:var(--mono); /* taste-skill-ignore: a literal shell command */font-size:13px;background:var(--paper-2);padding:6px 10px;max-width:46ch;word-break:break-all;text-align:left}
 .step.busy .step-side{opacity:.6}
 
 /* footer and toast */

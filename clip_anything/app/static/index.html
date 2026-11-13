@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <title>Clip Anything</title>
+<meta name="theme-color" content="#f1efe9">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/static/fonts/BarlowCondensed-Bold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/Barlow-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
@@ -69,7 +72,7 @@
         </div>
       </fieldset>
       <div class="field field-toggles">
-        <label class="check"><input type="checkbox" id="captions" name="captions" checked><span>Captions when there is speech</span></label>
+        <label class="check"><input type="checkbox" id="captions" name="captions" checked><span>Captions when there is speech<small class="check-note" id="captions-note" hidden></small></span></label>
         <label class="check"><input type="checkbox" id="facecam" name="facecam" checked><span>Stack the facecam, if there is one</span></label>
         <label class="check"><input type="checkbox" id="follow" name="follow" checked><span>Crop follows the action</span></label>
       </div>
@@ -168,15 +171,20 @@
       <button type="button" class="card-play" aria-label="Play with sound"></button>
     </div>
     <div class="card-body">
-      <p class="card-rank"><span class="rank"></span><span class="time"></span><span class="score"></span></p>
+      <p class="card-rank"><span class="rank"></span><span class="time"></span></p>
       <p class="card-title"></p>
-      <p class="card-why"></p>
+      <p class="card-why"><span class="score"></span><span class="why"></span></p>
       <p class="card-hook"></p>
       <div class="card-actions">
         <button type="button" class="link" data-act="open">Open</button>
         <button type="button" class="link" data-act="reveal">Reveal in folder</button>
         <button type="button" class="link" data-act="copy">Copy post text</button>
         <button type="button" class="link link-danger" data-act="delete">Delete</button>
+      </div>
+      <div class="card-confirm" hidden>
+        <span>Delete this clip file?</span>
+        <button type="button" class="link link-danger" data-act="delete-yes">Delete</button>
+        <button type="button" class="link" data-act="delete-no">Keep</button>
       </div>
     </div>
   </li>
@@ -186,6 +194,7 @@
   <li class="step">
     <div class="step-main">
       <p class="step-label"><span class="step-mark" aria-hidden="true"></span><span class="step-name"></span></p>
+      <p class="step-why"></p>
       <p class="step-detail"></p>
       <p class="step-note"></p>
       <pre class="step-out" translate="no" hidden></pre>

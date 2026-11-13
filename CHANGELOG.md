@@ -2,6 +2,12 @@
 
 All notable changes to Clip Anything. Dates are the day the change landed.
 
+## Unreleased
+
+- The desktop app is a real product UI: drop zone with recent runs, one visible settings strip, a run screen with a live action-score curve and time estimate, a results grid of playable vertical clips with per-clip actions, a setup checklist with consent per install. Same page in a native window (`[app]` extra, pywebview) or the default browser; served from 127.0.0.1 with a per-launch token
+- `clip-anything app` opens it from the CLI; `clip-anything-gui` still works
+- Pipeline progress events carry a live audio level and the final score curve with the picked spans
+
 ## 0.2.0 — 2026-11-13
 
 - Desktop app for Windows and Mac (download, open, drop a recording in); Windows supported and tested in CI

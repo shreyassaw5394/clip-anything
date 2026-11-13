@@ -37,6 +37,7 @@ class JobRequest:
     crop: str = "follow"  # follow | center
     ai: bool = False
     ai_provider: str = "auto"  # auto | ollama | openai | anthropic
+    force: bool = True  # overwrite clips that already exist (the server decides per re-run)
 
     @classmethod
     def from_json(cls, data: dict) -> JobRequest:
@@ -90,7 +91,7 @@ class JobRequest:
         lo, hi = LENGTHS[self.length]
         return {
             "clips": {"count": self.count, "min_s": lo, "max_s": hi},
-            "render": {"out_dir": self.out_dir, "force": True},
+            "render": {"out_dir": self.out_dir, "force": self.force},
             "speech": {"captions": want_captions, "yes": want_captions},
             "layout": {"facecam": self.facecam, "crop": self.crop},
         }
@@ -246,17 +247,22 @@ class Job:
         r = self.report
         out = self.out_dir()
         clips = []
+        kept = 0
         for c in r.clips:
             name = os.path.basename(c.path) if c.path else ""
             inside = bool(out and c.path and Path(c.path).resolve().parent == out)
+            status = c.status
+            if status == "skipped" and (c.error or "").startswith("exists") and inside:
+                status, kept = "ok", kept + 1  # same clip from the previous run, kept as is
             clips.append(
                 {
                     "rank": c.rank,
                     "start": c.start,
                     "end": c.end,
                     "duration_s": c.duration_s,
+                    "peak_offset": max(0.0, round(c.peak_t - c.start, 2)),
                     "score": c.score,
-                    "status": c.status,
+                    "status": status,
                     "error": c.error,
                     "file": name if inside else "",
                     "source": os.path.basename(c.source) if c.source else "",
@@ -272,7 +278,8 @@ class Job:
             "out_dir": str(out) if out else "",
             "report_file": "report.json" if r.report_path else "",
             "clips": clips,
-            "ok": len(r.ok_clips),
+            "ok": len(r.ok_clips) + kept,
+            "kept": kept,
             "total": len(r.clips),
             "candidates": r.candidates_total,
             "input": {
@@ -300,9 +307,9 @@ def why_line(clip) -> str:
             text += f", plus {parts[2]}"
     elif parts:
         text = ", ".join(parts[:-1]) + (" and " if len(parts) > 1 else "") + parts[-1]
-        text = text[0].upper() + text[1:]
     else:
-        text = "Above the action bar"
+        text = "above the action bar"
+    text = text[0].upper() + text[1:]
     if clip.status == "failed":
         return f"Render failed: {clip.error or 'unknown error'}"
     return text
