@@ -1,6 +1,7 @@
-"""Desktop window over `pipeline.run`: tkinter from the stdlib, one worker thread, a queue of
-messages. The `Controller` knows nothing about tkinter so it can be tested headless; `App`
-is the thin widget layer. Run with `clip-anything-gui` or `python -m clip_anything.gui`."""
+"""Desktop entry point and the headless job model behind it. `clip-anything-gui` (and
+`clip-anything app`) start the local web app in `clip_anything.app`; the `Controller` /
+`ProgressModel` here run one job on a worker thread with a queue of messages and know nothing
+about any UI, so they are tested headless and reused by the app server."""
 
 from __future__ import annotations
 
@@ -255,7 +256,7 @@ class Controller:
                 return out
 
 
-# --- tkinter layer ------------------------------------------------------------------------
+# --- entry points -------------------------------------------------------------------------
 
 
 def asset_path(name: str) -> Path | None:
@@ -271,263 +272,27 @@ def asset_path(name: str) -> Path | None:
     return None
 
 
-class App:
-    POLL_MS = 100
-
-    def __init__(self, root, controller: Controller | None = None, inputs=None) -> None:
-        import tkinter as tk
-        from tkinter import ttk
-
-        self.tk, self.ttk = tk, ttk
-        self.root = root
-        self.controller = controller or Controller()
-        root.title("Clip Anything")
-        root.minsize(560, 520)
-        icon = asset_path("icon.png")
-        if icon is not None:
-            try:
-                self._icon = tk.PhotoImage(file=str(icon))
-                root.iconphoto(True, self._icon)
-            except tk.TclError:
-                pass
-
-        self.inputs: list[str] = list(inputs or [])
-        default_out = (
-            Path(self.inputs[0]).parent / "clips" if self.inputs else Path.home() / "clips"
-        )
-        self.out_var = tk.StringVar(value=str(default_out))
-        self.count_var = tk.IntVar(value=10)
-        self.captions_var = tk.BooleanVar(value=captions_available())
-        self.facecam_var = tk.StringVar(value="auto")
-        self.crop_var = tk.StringVar(value="follow")
-        self.status_var = tk.StringVar(value="Pick a recording to begin.")
-        self.detail_var = tk.StringVar(value="")
-        self.input_var = tk.StringVar(value=self._input_text())
-
-        pad = {"padx": 12, "pady": 6}
-        frame = ttk.Frame(root, padding=12)
-        frame.pack(fill="both", expand=True)
-
-        ttk.Label(frame, text="Clip Anything", font=("TkDefaultFont", 20, "bold")).pack(anchor="w")
-        ttk.Label(
-            frame,
-            text="Long gameplay recording in, the best vertical clips out. "
-            "Everything stays on this computer.",
-        ).pack(anchor="w", pady=(0, 10))
-
-        row = ttk.Frame(frame)
-        row.pack(fill="x", **pad)
-        ttk.Button(row, text="Choose recording...", command=self.pick_file).pack(side="left")
-        ttk.Button(row, text="Choose folder of recordings...", command=self.pick_folder).pack(
-            side="left", padx=(8, 0)
-        )
-        ttk.Label(frame, textvariable=self.input_var, wraplength=520).pack(anchor="w", padx=12)
-
-        row = ttk.Frame(frame)
-        row.pack(fill="x", **pad)
-        ttk.Button(row, text="Clips go to...", command=self.pick_out).pack(side="left")
-        ttk.Label(row, textvariable=self.out_var, wraplength=380).pack(side="left", padx=(8, 0))
-
-        opts = ttk.LabelFrame(frame, text="Options", padding=8)
-        opts.pack(fill="x", **pad)
-        r1 = ttk.Frame(opts)
-        r1.pack(fill="x")
-        ttk.Label(r1, text="Number of clips").pack(side="left")
-        ttk.Spinbox(r1, from_=1, to=100, width=5, textvariable=self.count_var).pack(
-            side="left", padx=(6, 18)
-        )
-        cap_text = "Captions when there is speech"
-        if captions_available():
-            cap_text += " (first run downloads a ~150 MB speech model)"
-        else:
-            cap_text += " (not included in this build)"
-        cap = ttk.Checkbutton(r1, text=cap_text, variable=self.captions_var)
-        cap.pack(side="left")
-        if not captions_available():
-            cap.state(["disabled"])
-        r2 = ttk.Frame(opts)
-        r2.pack(fill="x", pady=(6, 0))
-        ttk.Label(r2, text="Facecam").pack(side="left")
-        ttk.Combobox(
-            r2, values=["auto", "off"], textvariable=self.facecam_var, width=6, state="readonly"
-        ).pack(side="left", padx=(6, 18))
-        ttk.Label(r2, text="Vertical crop").pack(side="left")
-        ttk.Combobox(
-            r2, values=["follow", "center"], textvariable=self.crop_var, width=7, state="readonly"
-        ).pack(side="left", padx=(6, 0))
-
-        row = ttk.Frame(frame)
-        row.pack(fill="x", **pad)
-        self.start_btn = ttk.Button(row, text="Make clips", command=self.start)
-        self.start_btn.pack(side="left")
-        self.cancel_btn = ttk.Button(row, text="Cancel", command=self.cancel, state="disabled")
-        self.cancel_btn.pack(side="left", padx=(8, 0))
-        self.open_btn = ttk.Button(
-            row, text="Open clips folder", command=self.open_out, state="disabled"
-        )
-        self.open_btn.pack(side="right")
-
-        self.bar = ttk.Progressbar(frame, maximum=1000, length=520)
-        self.bar.pack(fill="x", padx=12, pady=(6, 0))
-        ttk.Label(frame, textvariable=self.status_var).pack(anchor="w", padx=12)
-        ttk.Label(frame, textvariable=self.detail_var, foreground="#666").pack(anchor="w", padx=12)
-
-        cols = ("rank", "time", "score", "file")
-        self.tree = ttk.Treeview(frame, columns=cols, show="headings", height=8)
-        for c, w in zip(cols, (40, 110, 60, 300), strict=True):
-            self.tree.heading(c, text=c.title())
-            self.tree.column(c, width=w, anchor="w")
-        self.tree.pack(fill="both", expand=True, padx=12, pady=(8, 0))
-        self.warnings: list[str] = []
-        root.protocol("WM_DELETE_WINDOW", self.close)
-
-    # -- pickers --
-    def _input_text(self) -> str:
-        if not self.inputs:
-            return "No recording chosen yet."
-        if len(self.inputs) == 1:
-            return self.inputs[0]
-        return f"{len(self.inputs)} recordings"
-
-    def _set_inputs(self, paths: list[str]) -> None:
-        self.inputs = [p for p in paths if p]
-        self.input_var.set(self._input_text())
-        if self.inputs:
-            self.out_var.set(str(Path(self.inputs[0]).parent / "clips"))
-
-    def pick_file(self) -> None:
-        from tkinter import filedialog
-
-        types = [("Recordings", " ".join("*" + s for s in VIDEO_SUFFIXES)), ("All files", "*")]
-        paths = filedialog.askopenfilenames(title="Choose recording(s)", filetypes=types)
-        if paths:
-            self._set_inputs(list(paths))
-
-    def pick_folder(self) -> None:
-        from tkinter import filedialog
-
-        path = filedialog.askdirectory(title="Choose a folder of recordings")
-        if path:
-            self._set_inputs([path])
-
-    def pick_out(self) -> None:
-        from tkinter import filedialog
-
-        path = filedialog.askdirectory(title="Where should the clips go?")
-        if path:
-            self.out_var.set(path)
-
-    # -- job --
-    def settings(self) -> JobSettings:
-        try:
-            count = int(self.count_var.get())
-        except (ValueError, self.tk.TclError):
-            count = 0
-        return JobSettings(
-            inputs=list(self.inputs),
-            out_dir=self.out_var.get(),
-            count=count,
-            captions=bool(self.captions_var.get()),
-            facecam=self.facecam_var.get(),
-            crop=self.crop_var.get(),
-        )
-
-    def start(self) -> None:
-        problem = self.controller.start(self.settings())
-        if problem:
-            self.status_var.set(problem)
-            return
-        self.tree.delete(*self.tree.get_children())
-        self.warnings = []
-        self.bar["value"] = 0
-        self.status_var.set("Starting...")
-        self.detail_var.set("")
-        self.start_btn.state(["disabled"])
-        self.cancel_btn.state(["!disabled"])
-        self.open_btn.state(["disabled"])
-        self.root.after(self.POLL_MS, self.poll)
-
-    def cancel(self) -> None:
-        self.controller.cancel()
-        self.status_var.set("Stopping after the current step...")
-        self.cancel_btn.state(["disabled"])
-
-    def poll(self) -> None:
-        for kind, payload in self.controller.drain():
-            if kind == "progress":
-                p = payload
-                self.bar["value"] = int(p.fraction * 1000)
-                self.status_var.set(p.label)
-                self.detail_var.set(p.detail)
-            elif kind == "warn":
-                self.warnings.append(str(payload))
-            elif kind == "done":
-                self._finish(payload)
-                return
-            elif kind == "error":
-                self._idle(str(payload))
-                return
-            elif kind == "cancelled":
-                self._idle("Stopped. Nothing was left half-written.")
-                return
-        if self.controller.running or not self.controller.queue.empty():
-            self.root.after(self.POLL_MS, self.poll)
-
-    def _idle(self, status: str) -> None:
-        self.status_var.set(status)
-        self.detail_var.set("")
-        self.start_btn.state(["!disabled"])
-        self.cancel_btn.state(["disabled"])
-
-    def _finish(self, report) -> None:
-        for row in clip_rows(report):
-            self.tree.insert("", "end", values=row)
-        ok, total = len(report.ok_clips), len(report.clips)
-        self.bar["value"] = 1000
-        if total == 0:
-            msg = "No moments cleared the action bar in this recording."
-        else:
-            msg = f"Done: {ok} of {total} clips are in {report.out_dir}"
-        if self.warnings:
-            msg += f"  ({len(self.warnings)} note{'s' if len(self.warnings) > 1 else ''})"
-        self._idle(msg)
-        self.detail_var.set(" | ".join(self.warnings[:3]))
-        if ok:
-            self.open_btn.state(["!disabled"])
-
-    def open_out(self) -> None:
-        try:
-            open_folder(self.out_var.get())
-        except OSError as exc:
-            self.status_var.set(f"Could not open the folder: {exc}")
-
-    def close(self) -> None:
-        if self.controller.running:
-            self.controller.cancel()
-        self.root.destroy()
-
-
 def selftest() -> int:
-    """Build the window without showing it, or exit 0 with a note when there is no display."""
+    """Start the app server on a free port, fetch the page with the token, stop. No window."""
+    import urllib.request
+
+    from .app.server import AppServer
+
+    server = AppServer().start()
     try:
-        import tkinter as tk
-    except ImportError as exc:
-        print(f"selftest: tkinter not available ({exc})")
-        return 0
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        print(f"selftest: no display ({exc})")
-        return 0
-    try:
-        root.withdraw()
-        app = App(root)
-        root.update_idletasks()
-        assert app.settings().count == 10
-        print("selftest: window built")
+        with urllib.request.urlopen(server.url, timeout=10) as res:  # noqa: S310 - our own loopback URL
+            html = res.read(4096).decode("utf-8", "replace")
+            ok = res.status == 200 and "Clip Anything" in html
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{server.port}/api/caps",
+            headers={"Authorization": f"Bearer {server.token}"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as res:  # noqa: S310
+            ok = ok and res.status == 200
     finally:
-        root.destroy()
-    return 0
+        server.stop()
+    print("selftest: app server ok" if ok else "selftest: app server FAILED")
+    return 0 if ok else 1
 
 
 def headless(inputs: list[str], out_dir: str, count: int, captions: bool = False) -> int:
@@ -562,7 +327,7 @@ def headless(inputs: list[str], out_dir: str, count: int, captions: bool = False
 
 
 def main(argv: list[str] | None = None) -> int:
-    """clip-anything-gui [recording ...] [--autostart] | --selftest | --version |
+    """clip-anything-gui [--browser | --window] [--port N] | --selftest | --version |
     --run <recording> --out <folder> [--count N] [--captions]"""
     argv = sys.argv[1:] if argv is None else list(argv)
     if "--selftest" in argv:
@@ -585,15 +350,12 @@ def main(argv: list[str] | None = None) -> int:
         out = _opt("--out") or str(Path(video or ".").resolve().parent / "clips")
         count = int(_opt("--count", "10") or 10)
         return headless([video] if video else [], out, count, captions="--captions" in argv)
-    inputs = [a for a in argv if not a.startswith("-")]
-    import tkinter as tk
+    from .app.launch import launch
 
-    root = tk.Tk()
-    app = App(root, inputs=inputs)
-    if "--autostart" in argv and inputs:
-        root.after(300, app.start)
-    root.mainloop()
-    return 0
+    window = "browser" if "--browser" in argv else ("webview" if "--window" in argv else "auto")
+    return launch(
+        window=window, port=int(_opt("--port", "0") or 0), open_ui="--no-open" not in argv
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover

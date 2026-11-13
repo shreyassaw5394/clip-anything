@@ -39,6 +39,9 @@ dependencies = [
 captions = ["faster-whisper>=1.1,<2"]
 dev = ["pytest>=8,<10", "ruff>=0.8,<1"]
 desktop = ["pyinstaller>=6.10,<7"]
+app = [
+    "pywebview>=5,<7",
+]
 
 [project.urls]
 Homepage = "https://shipatmidnight.dev/clip-anything"

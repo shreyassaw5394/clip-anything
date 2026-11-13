@@ -101,6 +101,7 @@ def _run_audio(
                     min(info.duration_s, seg_start + fed / a.sample_rate),
                     info.duration_s,
                     "s",
+                    extra={"level_db": _chunk_level_db(buf)},
                 ),
             )
         if checkpoint is not None and seg_start + seg_len < info.duration_s - 1e-6:
@@ -113,6 +114,40 @@ def _run_audio(
         arrays = {k: np.concatenate([pre[k], arrays[k]]) for k in arrays}
     finalize(arrays, a.hop_s, a.baseline_s)
     return arrays
+
+
+def _chunk_level_db(buf: bytes) -> float:
+    """RMS of one int16 chunk in dBFS (-96 for silence): a cheap live trace for UIs."""
+    if len(buf) < 4:
+        return -96.0
+    x = np.frombuffer(buf, dtype="<i2", count=len(buf) // 2).astype(np.float32)
+    rms = float(np.sqrt(np.mean(x * x))) / 32768.0
+    return round(max(-96.0, 20.0 * float(np.log10(rms + 1e-9))), 1)
+
+
+def curve_summary(
+    score: np.ndarray, hop_s: float, clips, points: int = 720, spans: list[dict] | None = None
+) -> dict:
+    """Downsampled smoothed action score (max-pooled to <= `points`) plus the picked spans:
+    attached to the `score done` event so a UI can draw the curve without the cache file."""
+    arr = np.nan_to_num(np.asarray(score, dtype=np.float32), nan=0.0)
+    n = arr.size
+    if n == 0:
+        return {"curve": [], "step_s": hop_s, "spans": []}
+    step = max(1, int(np.ceil(n / points)))
+    pad = (-n) % step
+    pooled = np.pad(arr, (0, pad), constant_values=0.0).reshape(-1, step).max(axis=1)
+    return {
+        "curve": [round(float(v), 3) for v in pooled],
+        "step_s": hop_s * step,
+        "spans": spans
+        if spans is not None
+        else [
+            {"start": round(c.start, 2), "end": round(c.end, 2), "peak_t": round(c.peak_t, 2),
+             "score": round(c.score, 3)}
+            for c in clips
+        ],
+    }  # fmt: skip
 
 
 def _run_video(
@@ -527,7 +562,15 @@ def run(
                 ai=c.features.get("ai") if isinstance(c.features.get("ai"), dict) else None,
             )
         )
-    emit(on_event, Event("score", "done", message=f"{len(top)} clips from {total} candidates"))
+    emit(
+        on_event,
+        Event(
+            "score",
+            "done",
+            message=f"{len(top)} clips from {total} candidates",
+            extra=curve_summary(_sm, sig.hop_s, top),
+        ),
+    )
     if not top:
         report.warnings.append(Warning("score", "no_peaks", "no action peaks found"))
     elif len(top) < opts.clips.count:
@@ -826,6 +869,7 @@ def _run_many(
     t0 = time.time()
     speech_on = (opts.speech.captions or opts.speech.rank) and report.input["has_audio"]
     n_select = opts.clips.count * 3 if (speech_on and opts.speech.rank) else opts.clips.count
+    _sm = np.zeros(0, dtype=np.float32)
     if session.short_mode:
         top = _whole_file_candidates(session, sig, opts, n_select)
         total = len(session.sources)
@@ -911,7 +955,29 @@ def _run_many(
                 ai=c.features.get("ai") if isinstance(c.features.get("ai"), dict) else None,
             )
         )
-    emit(on_event, Event("score", "done", message=f"{len(top)} clips from {total} candidates"))
+    emit(
+        on_event,
+        Event(
+            "score",
+            "done",
+            message=f"{len(top)} clips from {total} candidates",
+            extra=curve_summary(
+                _sm,
+                sig.hop_s,
+                top,
+                spans=[
+                    {
+                        "start": round(where[c.id][1], 2),
+                        "end": round(where[c.id][2], 2),
+                        "peak_t": round(c.peak_t + where[c.id][0].offset_s, 2),
+                        "score": round(c.score, 3),
+                    }
+                    for c in top
+                    if c.id in where
+                ],
+            ),
+        ),
+    )
     if not top:
         report.warnings.append(Warning("score", "no_peaks", "no action peaks found"))
 
