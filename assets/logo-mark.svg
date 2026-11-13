@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Clip Anything mark">
+<title>Clip Anything mark</title>
+<g transform="translate(0 0) scale(1.0)">
+<rect x="48" y="344" width="20" height="48" rx="4" fill="#f1efe9" opacity="0.55"/>
+<rect x="80" y="308" width="20" height="84" rx="4" fill="#f1efe9" opacity="0.55"/>
+<rect x="112" y="328" width="20" height="64" rx="4" fill="#f1efe9" opacity="0.55"/>
+<rect x="144" y="284" width="20" height="108" rx="4" fill="#f1efe9" opacity="0.55"/>
+<rect x="336" y="300" width="20" height="92" rx="4" fill="#f1efe9" opacity="0.55"/>
+<rect x="368" y="336" width="20" height="56" rx="4" fill="#f1efe9" opacity="0.55"/>
+<rect x="400" y="316" width="20" height="76" rx="4" fill="#f1efe9" opacity="0.55"/>
+<rect x="432" y="348" width="20" height="44" rx="4" fill="#f1efe9" opacity="0.55"/>
+<rect x="184" y="96" width="144" height="256" rx="16" fill="#c4105f"/>
+<rect x="246" y="128" width="20" height="192" rx="4" fill="#f1efe9"/>
+</g>
+</svg>
