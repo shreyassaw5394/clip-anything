@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light">
+<meta name="color-scheme" content="light dark">
 <title>Clip Anything</title>
-<meta name="theme-color" content="#f1efe9">
+<meta name="theme-color" content="#f1efe9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15161a" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/static/fonts/BarlowCondensed-Bold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/static/fonts/Barlow-Regular.woff2" as="font" type="font/woff2" crossorigin>
@@ -35,60 +36,90 @@
     <button type="button" class="nav-btn" data-nav="results" id="nav-results" hidden>Results</button>
     <button type="button" class="nav-btn" data-nav="setup">Set up</button>
   </nav>
-  <p class="ready" id="ready" aria-live="polite"><span class="ready-item">Checking this computer…</span></p>
+  <p class="ready" id="ready" aria-live="polite"><span class="dot" id="ready-dot" aria-hidden="true"></span><span id="ready-text">Checking this computer…</span></p>
 </header>
 
 <main id="main" tabindex="-1">
 
   <!-- 1. Home / drop zone -->
   <section class="screen" id="screen-home" aria-labelledby="h-home">
-    <h1 class="title" id="h-home">Drop a recording<br>or a folder of clips</h1>
+    <ol class="hints" id="hints" aria-label="How it works" hidden>
+      <li class="hint"><span class="hint-n" aria-hidden="true">1</span><span><b>Drop</b> a recording or a folder of them.</span></li>
+      <li class="hint"><span class="hint-n" aria-hidden="true">2</span><span><b>Make clips</b> and watch it pick the action.</span></li>
+      <li class="hint"><span class="hint-n" aria-hidden="true">3</span><span><b>Post</b> the vertical clips it hands you, with the text.</span></li>
+      <li class="hint hint-x"><button type="button" class="link" id="hints-dismiss">Got it</button></li>
+    </ol>
+
+    <h1 class="title" id="h-home">Make clips from a recording</h1>
+
     <div class="drop" id="drop" data-state="empty">
-      <p class="drop-line" id="drop-line">Drop it here, or</p>
-      <div class="drop-actions">
-        <button type="button" class="btn btn-ink" id="choose-file">Choose a recording</button>
-        <button type="button" class="btn" id="choose-folder">Choose a folder</button>
+      <svg class="drop-border" aria-hidden="true" focusable="false" preserveAspectRatio="none"><rect x="1" y="1" width="100%" height="100%" rx="0"/></svg>
+      <div class="drop-empty" id="drop-empty">
+        <p class="drop-line" id="drop-line">Drop it here</p>
+        <p class="drop-sub">Any screen recording or gameplay video. A folder of recordings works too.</p>
+        <div class="drop-actions">
+          <button type="button" class="btn btn-ink" id="choose-file">Choose a recording</button>
+          <button type="button" class="btn" id="choose-folder">Choose a folder</button>
+        </div>
       </div>
-      <ul class="chosen" id="chosen" aria-label="Chosen recordings"></ul>
-      <button type="button" class="link" id="clear-inputs" hidden>Clear</button>
+      <div class="drop-chosen" id="drop-chosen" hidden>
+        <p class="drop-kicker" id="drop-kicker">Ready to go</p>
+        <p class="drop-name" id="drop-name" translate="no"></p>
+        <p class="drop-meta" id="drop-meta" aria-live="polite"></p>
+        <ul class="chosen" id="chosen" aria-label="Chosen recordings"></ul>
+        <div class="drop-actions drop-actions-sm">
+          <button type="button" class="link" id="change-file">Choose another</button>
+          <button type="button" class="link" id="clear-inputs">Clear</button>
+        </div>
+      </div>
     </div>
 
+    <div class="run-row">
+      <button type="button" class="btn btn-ink btn-big" id="start">Make 10 clips</button>
+      <p class="out-line">Clips go to <code class="out-dir" id="out-dir" translate="no">—</code>
+        <button type="button" class="link" id="change-out">Change</button></p>
+    </div>
+    <div class="problem" id="home-problem" role="alert"></div>
+    <p class="notice" id="home-note" aria-live="polite"></p>
+
     <!-- 2. Settings strip -->
-    <form class="settings" id="settings" aria-label="Settings" novalidate>
+    <p class="settings-lead" id="settings-lead">Defaults are good. Change them if you want.</p>
+    <form class="settings" id="settings" aria-label="Settings" aria-describedby="settings-lead" novalidate>
       <div class="field field-count">
         <label for="count">How many clips</label>
         <div class="count-row">
           <input type="range" id="count" name="count" min="1" max="20" value="10" step="1" aria-describedby="count-note">
           <output for="count" id="count-out" class="count-out">10</output>
         </div>
-        <p class="note" id="count-note">A maximum. Only moments that clear the action bar become clips.</p>
+        <p class="note" id="count-note">Up to this many. Only moments that clear the action bar become clips.</p>
+        <fieldset class="field-bar">
+          <legend>Action bar</legend>
+          <div class="seg seg-sm" role="radiogroup" aria-label="Action bar" aria-describedby="bar-note">
+            <label class="seg-item"><input type="radio" name="bar" value="normal" checked><span>Normal</span></label>
+            <label class="seg-item"><input type="radio" name="bar" value="low"><span>Low</span></label>
+          </div>
+          <p class="note" id="bar-note">Low lets quieter moments through.</p>
+        </fieldset>
       </div>
       <fieldset class="field">
         <legend>Length</legend>
-        <div class="seg" role="radiogroup" aria-label="Clip length">
+        <div class="seg" role="radiogroup" aria-label="Clip length" aria-describedby="length-note">
           <label class="seg-item"><input type="radio" name="length" value="short"><span>Short</span><small>15–30 s</small></label>
           <label class="seg-item"><input type="radio" name="length" value="normal" checked><span>Normal</span><small>15–45 s</small></label>
           <label class="seg-item"><input type="radio" name="length" value="long"><span>Long</span><small>30–60 s</small></label>
         </div>
+        <p class="note" id="length-note">How long each clip runs. The cut lands on a quiet beat.</p>
       </fieldset>
       <div class="field field-toggles">
-        <label class="check"><input type="checkbox" id="captions" name="captions" checked><span>Captions when there is speech<small class="check-note" id="captions-note" hidden></small></span></label>
-        <label class="check"><input type="checkbox" id="facecam" name="facecam" checked><span>Stack the facecam, if there is one</span></label>
-        <label class="check"><input type="checkbox" id="follow" name="follow" checked><span>Crop follows the action</span></label>
+        <label class="check"><input type="checkbox" id="captions" name="captions" checked><span>Captions when there is speech<small class="check-note" id="captions-note">Words appear on screen as they are said.</small></span></label>
+        <label class="check"><input type="checkbox" id="facecam" name="facecam" checked><span>Show my webcam on top<small class="check-note">If a webcam box sits in a corner, it goes above the gameplay.</small></span></label>
+        <label class="check"><input type="checkbox" id="follow" name="follow" checked><span>Follow the action<small class="check-note">The vertical crop moves to where things happen.</small></span></label>
       </div>
       <div class="field field-ai">
-        <label class="check"><input type="checkbox" id="ai" name="ai"><span>With AI</span></label>
-        <p class="note" id="ai-note">Titles, hooks and a second opinion on the picks from a local model (Ollama). Nothing leaves this computer.</p>
+        <label class="check"><input type="checkbox" id="ai" name="ai"><span>Smarter picks and titles (AI)<small class="check-note" id="ai-note">A local model gives every clip a title and a hook and double-checks the picks. Nothing leaves this computer.</small></span></label>
         <p class="note warn" id="ai-cloud" hidden></p>
       </div>
     </form>
-
-    <div class="run-row">
-      <p class="out-line">Clips go to <code class="out-dir" id="out-dir" translate="no">—</code>
-        <button type="button" class="link" id="change-out">Change</button></p>
-      <button type="button" class="btn btn-ink btn-big" id="start">Make clips</button>
-    </div>
-    <p class="problem" id="home-problem" role="alert"></p>
 
     <section class="recent" id="recent-section" aria-labelledby="h-recent" hidden>
       <div class="row-head"><h2 id="h-recent">Recent</h2><button type="button" class="link" id="forget">Forget all</button></div>
@@ -113,10 +144,11 @@
         <polyline id="curve-line" points="" fill="none" vector-effect="non-scaling-stroke"></polyline>
         <line id="curve-head" x1="0" x2="0" y1="0" y2="220" vector-effect="non-scaling-stroke"></line>
       </svg>
+      <span class="curve-dot" id="curve-dot" aria-hidden="true" hidden></span>
       <figcaption class="curve-caption" id="curve-caption">Listening for action</figcaption>
     </figure>
     <p class="disclosure" id="disclosure" hidden></p>
-    <div class="run-actions"><button type="button" class="btn" id="cancel">Cancel</button></div>
+    <div class="run-actions"><button type="button" class="btn" id="cancel">Cancel</button><span class="note">Esc also stops it. Nothing is left half-written.</span></div>
   </section>
 
   <!-- 4. Results -->
@@ -126,11 +158,18 @@
       <p class="results-sub" id="results-sub"></p>
     </div>
     <ul class="notes" id="result-notes"></ul>
-    <ul class="grid" id="grid" aria-label="Clips"></ul>
-    <div class="results-actions">
+    <div class="empty" id="empty-results" hidden>
+      <p class="empty-title" id="empty-title">Nothing stood out.</p>
+      <p class="empty-text" id="empty-text">Try a lower bar: quieter moments get through.</p>
+      <button type="button" class="btn btn-ink" id="lower-bar">Lower the bar and run again</button>
+    </div>
+    <p class="grid-help" id="grid-help">Hover to preview, click for sound. Arrow keys move between clips, Enter plays, Space pauses.</p>
+    <ul class="grid" id="grid" aria-label="Clips" aria-describedby="grid-help"></ul>
+    <div class="dock" id="dock">
       <button type="button" class="btn btn-ink" id="open-folder">Open folder</button>
       <button type="button" class="btn" id="rerun">Re-run with different settings</button>
       <a class="btn" id="export" href="#" download="report.json">Export report</a>
+      <p class="dock-status" id="dock-status" role="status" aria-live="polite"></p>
     </div>
   </section>
 
@@ -140,14 +179,15 @@
     <p class="lead">Each line is checked now. Nothing is installed until you press its button, and every button says exactly what it will run.</p>
     <ol class="steps" id="steps" aria-busy="true"></ol>
     <p class="note" id="setup-note">Prefer to do it by hand? The same steps are in the <a href="https://github.com/shreyassaw5394/clip-anything#setup" rel="noopener noreferrer" target="_blank">README</a>.</p>
-    <p class="problem" id="setup-problem" role="alert"></p>
+    <div class="problem" id="setup-problem" role="alert"></div>
   </section>
 
   <!-- Error screen -->
   <section class="screen" id="screen-error" aria-labelledby="h-error" hidden>
     <h1 class="title title-sm" id="h-error">That did not work</h1>
     <p class="lead" id="error-text"></p>
-    <div class="results-actions"><button type="button" class="btn btn-ink" id="error-back">Back</button></div>
+    <p class="note" id="error-hint">If this keeps happening, the Set up screen shows what this computer is missing.</p>
+    <div class="results-actions"><button type="button" class="btn btn-ink" id="error-back">Try again</button><button type="button" class="btn" id="error-setup">Set up</button></div>
   </section>
 </main>
 
@@ -164,17 +204,18 @@
 <p class="toast" id="toast" role="status" aria-live="polite"></p>
 
 <template id="card-tpl">
-  <li class="card">
+  <li class="card" tabindex="-1">
     <div class="card-media">
       <video class="card-video" preload="metadata" playsinline muted></video>
       <div class="card-scrub" aria-hidden="true"></div>
-      <button type="button" class="card-play" aria-label="Play with sound"></button>
+      <button type="button" class="card-play" aria-label="Play with sound" tabindex="-1"></button>
     </div>
     <div class="card-body">
-      <p class="card-rank"><span class="rank"></span><span class="time"></span></p>
+      <p class="card-head"><span class="rank"></span><span class="best" hidden>Best moment</span><span class="time"></span></p>
+      <h3 class="card-why"><span class="why"></span></h3>
       <p class="card-title"></p>
-      <p class="card-why"><span class="score"></span><span class="why"></span></p>
       <p class="card-hook"></p>
+      <p class="card-score"><span class="score"></span></p>
       <div class="card-actions">
         <button type="button" class="link" data-act="open">Open</button>
         <button type="button" class="link" data-act="reveal">Reveal in folder</button>

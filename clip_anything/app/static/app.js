@@ -6,10 +6,13 @@
   const $ = (id) => document.getElementById(id);
   const screens = ["home", "run", "results", "setup", "error"];
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+  const FIRST_RUN_KEY = "clip-anything.first-run";
 
   const state = {
     caps: null,
     inputs: [],
+    inspect: null,
+    inputProblem: "",
     outDir: "",
     outDirCustom: false,
     job: null,
@@ -20,6 +23,8 @@
     levels: [], // live audio trace: [t, 0..1]
     curve: null,
     stepsBusy: false,
+    stage: "",
+    curveAnim: 0,
   };
 
   // ---------------------------------------------------------------- api
@@ -57,6 +62,13 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => t.classList.remove("show"), 2600);
   }
+  let dockTimer = 0;
+  function dockSay(text) {
+    const d = $("dock-status");
+    d.textContent = text;
+    clearTimeout(dockTimer);
+    dockTimer = setTimeout(() => { d.textContent = ""; }, 3200);
+  }
   const mmss = (s) => { s = Math.max(0, Math.floor(s)); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); };
   const basename = (p) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p;
   function dirname(p) {
@@ -75,49 +87,95 @@
     const m = Math.round(sec / 60);
     return "about " + m + (m === 1 ? " minute" : " minutes");
   }
+  function length(sec) {
+    sec = Math.round(sec || 0);
+    if (sec < 60) return sec + " s";
+    const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+    if (h) return h + " h" + (m ? " " + m + " min" : "");
+    return m + " min";
+  }
+  function size(bytes) {
+    if (!bytes) return "";
+    if (bytes >= 1e9) return (bytes / 1e9).toFixed(bytes >= 1e10 ? 0 : 1) + " GB";
+    if (bytes >= 1e6) return Math.round(bytes / 1e6) + " MB";
+    return Math.max(1, Math.round(bytes / 1e3)) + " kB";
+  }
   function el(tag, cls, text) {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
     if (text !== undefined) e.textContent = text;
     return e;
   }
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode: the hint just shows again */ } },
+  };
+
+  // ---------------------------------------------------------------- first-run hints
+  function hints() {
+    $("hints").hidden = store.get(FIRST_RUN_KEY) === "done";
+  }
+  function hintsDone() {
+    store.set(FIRST_RUN_KEY, "done");
+    $("hints").hidden = true;
+  }
 
   // ---------------------------------------------------------------- caps + ready line
   async function loadCaps() {
-    try { state.caps = await api("/api/caps"); } catch (e) { $("ready").textContent = e.message; return; }
+    const dot = $("ready-dot"), text = $("ready-text");
+    try { state.caps = await api("/api/caps"); } catch (e) { dot.className = "dot off"; text.textContent = e.message; return; }
     const c = state.caps;
     const ready = $("ready");
-    ready.textContent = "";
-    const item = (label, ok, fixText) => {
-      const li = el("span", "ready-item" + (ok ? "" : " off"));
-      li.append(label + " ", el("b", "", ok ? "ready" : "not ready"));
-      if (!ok && fixText) {
-        li.append(" ");
-        const b = el("button", "link", fixText);
-        b.type = "button";
-        b.addEventListener("click", () => openSetup());
-        li.append(b);
-      }
-      ready.append(li);
-    };
-    item("Video tools", c.ffmpeg.ok, "Set up");
-    item("Captions", c.captions && c.whisper === "ready", c.captions ? "Download" : "Set up");
-    item("AI", c.ai.ok, "Set up");
+    for (const b of ready.querySelectorAll("button")) b.remove();
+    const missing = [];
+    if (!(c.captions && c.whisper === "ready")) missing.push("captions");
+    if (!c.ai.ok) missing.push("AI");
+    if (!c.ffmpeg.ok) {
+      dot.className = "dot off";
+      text.textContent = "Video tools missing";
+      ready.append(setupLink("Set up"));
+    } else {
+      dot.className = "dot ok";
+      text.textContent = "Ready";
+      if (missing.length) ready.append(setupLink("Set up " + missing.join(" / ")));
+    }
     $("captions").disabled = !c.captions;
-    if (!c.captions) { $("captions").checked = false; $("captions-note").hidden = false; $("captions-note").textContent = "Not in this install: see Set up."; }
-    else if (c.whisper === "download") { $("captions-note").hidden = false; $("captions-note").textContent = "The first captioned run downloads the ~150 MB speech model once."; }
+    if (!c.captions) { $("captions").checked = false; $("captions-note").textContent = "Not in this install. Set up adds it."; }
+    else if (c.whisper === "download") $("captions-note").textContent = "Words appear on screen as they are said. The first captioned run downloads a 150 MB speech model once.";
     $("count").max = String(c.max_count || 20);
     $("version").textContent = "v" + c.version;
     $("quit").hidden = c.window !== "browser";
     if (c.ai.ok && c.ai.cloud) {
       $("ai-cloud").hidden = false;
-      $("ai-cloud").textContent = "An API key for " + c.ai.host + " is set: with AI on, frames and spoken lines of the candidate moments leave this computer and your key is used for the run.";
-      $("ai-note").textContent = "Titles, hooks and a second opinion on the picks.";
+      $("ai-cloud").textContent = "An API key for " + c.ai.host + " is set: with this on, frames and spoken lines of the candidate moments leave this computer and your key is used for the run.";
+      $("ai-note").textContent = "Every clip gets a title and a hook, and the picks get a second opinion.";
     } else if (!c.ai.ok) {
-      $("ai-note").textContent = "Titles, hooks and a second opinion on the picks from a local model. Not set up yet: install Ollama and a model from Set up, or set an OpenAI or Anthropic key in your environment.";
+      $("ai-note").textContent = "Titles, hooks and a second opinion on the picks from a local model. Not set up yet: Set up installs Ollama and a model.";
       $("ai").disabled = true;
     }
+    homeProblem();
     renderRecent(c.recent || []);
+  }
+
+  function setupLink(label) {
+    const b = el("button", "link", label);
+    b.type = "button";
+    b.addEventListener("click", () => openSetup());
+    return b;
+  }
+
+  /** The home screen's one problem line: tools missing beats a bad input beats nothing. */
+  function homeProblem(text) {
+    const p = $("home-problem");
+    p.textContent = "";
+    const c = state.caps;
+    if (c && !c.ffmpeg.ok) {
+      p.append("The video tools (ffmpeg) are missing, so nothing can run yet. ");
+      p.append(setupLink("Set up takes a minute"));
+    } else if (text || state.inputProblem) {
+      p.textContent = text || state.inputProblem;
+    }
+    $("start").disabled = !!(c && !c.ffmpeg.ok) || !!state.inputProblem;
   }
 
   function renderRecent(items) {
@@ -137,13 +195,15 @@
       b.addEventListener("click", () => {
         setInputs(r.inputs);
         state.outDir = r.out_dir; state.outDirCustom = true; $("out-dir").textContent = r.out_dir;
-        $("count").value = r.count; $("count-out").value = r.count;
+        $("count").value = r.count; countChanged();
         const len = document.querySelector('input[name=length][value="' + r.length + '"]');
         if (len) len.checked = true;
+        const bar = document.querySelector('input[name=bar][value="' + (r.bar || "normal") + '"]');
+        if (bar) bar.checked = true;
         $("captions").checked = !!r.captions && !$("captions").disabled;
         $("facecam").checked = r.facecam !== "off";
         $("follow").checked = r.crop !== "center";
-        $("ai").checked = !!r.ai;
+        $("ai").checked = !!r.ai && !$("ai").disabled;
         $("start").focus();
       });
       li.append(b);
@@ -154,24 +214,66 @@
   // ---------------------------------------------------------------- inputs
   function setInputs(paths) {
     state.inputs = paths.filter(Boolean);
+    state.inspect = null;
+    state.inputProblem = "";
     const drop = $("drop");
     const list = $("chosen");
     list.textContent = "";
-    for (const p of state.inputs.slice(0, 6)) {
-      const li = el("li");
-      li.append(el("span", "name", basename(p)), el("span", "path", dirname(p)));
-      list.append(li);
+    const n = state.inputs.length;
+    drop.dataset.state = n ? "chosen" : "empty";
+    $("drop-empty").hidden = n > 0;
+    $("drop-chosen").hidden = n === 0;
+    if (n) {
+      const first = state.inputs[0];
+      $("drop-kicker").textContent = n === 1 ? (isVideoName(first) ? "Recording" : "Folder") : n + " recordings, one session";
+      $("drop-name").textContent = n === 1 ? basename(first) : basename(first) + " + " + (n - 1) + " more";
+      $("drop-meta").textContent = "Reading…";
+      if (n > 1) {
+        for (const p of state.inputs.slice(0, 6)) {
+          const li = el("li");
+          li.append(el("span", "name", basename(p)), el("span", "path", dirname(p)));
+          list.append(li);
+        }
+        if (n > 6) list.append(el("li", "path", "and " + (n - 6) + " more"));
+      }
     }
-    if (state.inputs.length > 6) list.append(el("li", "path", "and " + (state.inputs.length - 6) + " more"));
-    drop.dataset.state = state.inputs.length ? "chosen" : "empty";
-    $("drop-line").textContent = state.inputs.length ? (state.inputs.length === 1 ? "Ready. Change it, or" : state.inputs.length + " recordings, in one session. Change them, or") : "Drop it here, or";
-    $("clear-inputs").hidden = state.inputs.length === 0;
     if (!state.outDirCustom) {
       const first = state.inputs[0] || "";
       state.outDir = first ? join(isVideoName(first) ? dirname(first) : first, "clips") : "";
     }
     $("out-dir").textContent = state.outDir || "a clips folder next to the recording";
-    $("home-problem").textContent = "";
+    $("home-note").textContent = "";
+    homeProblem();
+    if (n) inspectInputs(state.inputs);
+  }
+
+  async function inspectInputs(paths) {
+    let r;
+    try { r = await api("/api/inspect", { body: { inputs: paths } }); } catch (e) { $("drop-meta").textContent = ""; return; }
+    if (paths !== state.inputs) return; // the user changed their mind meanwhile
+    state.inspect = r;
+    const items = r.items || [];
+    const one = items.length === 1 ? items[0] : null;
+    const bits = [];
+    if (one && one.kind === "file") {
+      if (one.duration_s) bits.push(length(one.duration_s));
+      if (one.size_bytes) bits.push(size(one.size_bytes));
+      if (one.width && one.height) bits.push(one.width + "×" + one.height);
+      if (one.has_audio === false) bits.push("no audio track");
+    } else if (one && one.kind === "folder") {
+      bits.push(one.videos + (one.videos === 1 ? " recording" : " recordings"));
+      if (one.size_bytes) bits.push(size(one.size_bytes));
+    } else if (items.length > 1) {
+      bits.push(r.videos + " recordings");
+      if (r.total_duration_s) bits.push(length(r.total_duration_s));
+      if (r.total_size_bytes) bits.push(size(r.total_size_bytes));
+    }
+    $("drop-meta").textContent = bits.join(" · ");
+    if (r.problem) {
+      state.inputProblem = r.problem;
+      $("drop-kicker").textContent = "Not this one";
+    }
+    homeProblem();
   }
 
   async function pick(kind) {
@@ -179,7 +281,11 @@
       const r = await api("/api/pick", { body: { kind } });
       if (r.unsupported) { toast("No file picker is available in this mode. Drop files onto the window app instead."); return; }
       if (!r.paths || !r.paths.length) return;
-      if (kind === "out") { state.outDir = r.paths[0]; state.outDirCustom = true; $("out-dir").textContent = state.outDir; return; }
+      if (kind === "out") {
+        state.outDir = r.paths[0]; state.outDirCustom = true; $("out-dir").textContent = state.outDir;
+        api("/api/prefs", { body: { out_dir: state.outDir } }).catch(() => {});
+        return;
+      }
       setInputs(r.paths);
     } catch (e) { toast(e.message); }
   }
@@ -187,8 +293,9 @@
   function wireDrop() {
     const drop = $("drop");
     const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
+    const settle = () => { drop.dataset.state = state.inputs.length ? "chosen" : "empty"; };
     for (const ev of ["dragenter", "dragover"]) drop.addEventListener(ev, (e) => { stop(e); drop.dataset.state = "over"; });
-    drop.addEventListener("dragleave", (e) => { stop(e); drop.dataset.state = state.inputs.length ? "chosen" : "empty"; });
+    drop.addEventListener("dragleave", (e) => { stop(e); settle(); });
     let nativeDrop = 0;
     window.caDrop = (paths) => { nativeDrop = Date.now(); if (Array.isArray(paths) && paths.length) setInputs(paths.map(String)); };
     drop.addEventListener("drop", (e) => {
@@ -196,7 +303,7 @@
       const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
       const paths = files.map((f) => f.pywebviewFullPath || f.path || "").filter(Boolean);
       if (paths.length) { setInputs(paths); return; }
-      drop.dataset.state = state.inputs.length ? "chosen" : "empty";
+      settle();
       if (state.caps && state.caps.window === "webview") {
         // the native window hands the paths to caDrop a moment later
         const at = Date.now();
@@ -215,23 +322,30 @@
     return {
       count: parseInt($("count").value, 10) || 10,
       length: (document.querySelector("input[name=length]:checked") || {}).value || "normal",
+      bar: (document.querySelector("input[name=bar]:checked") || {}).value || "normal",
       captions: $("captions").checked,
       facecam: $("facecam").checked ? "auto" : "off",
       crop: $("follow").checked ? "follow" : "center",
       ai: $("ai").checked,
     };
   }
+  function countChanged() {
+    const n = parseInt($("count").value, 10) || 1;
+    $("count-out").value = String(n);
+    $("start").textContent = "Make " + n + (n === 1 ? " clip" : " clips");
+  }
 
   // ---------------------------------------------------------------- run
   async function start() {
     const s = settings();
-    if (!state.inputs.length) { $("home-problem").textContent = "Choose a recording (or a folder of recordings) first."; $("choose-file").focus(); return; }
+    if (!state.inputs.length) { homeProblem("Choose a recording (or a folder of recordings) first."); $("choose-file").focus(); return; }
+    if ($("start").disabled) return;
     $("start").disabled = true;
     try {
       const r = await api("/api/jobs", { body: { inputs: state.inputs, out_dir: state.outDir, ...s } });
       state.jobId = r.id;
       state.started = Date.now();
-      state.durationS = 0;
+      state.durationS = (state.inspect && state.inspect.total_duration_s) || 0;
       state.levels = [];
       state.curve = null;
       $("disclosure").hidden = !r.disclosure;
@@ -240,24 +354,36 @@
       show("run");
       listen(r.id);
     } catch (e) {
-      $("home-problem").textContent = e.message;
+      homeProblem(e.message);
     } finally {
       $("start").disabled = false;
     }
   }
 
   function resetRun() {
-    $("stage").textContent = "Starting";
+    state.stage = "";
+    setStage("Starting");
     $("eta").textContent = "";
     $("detail").textContent = "";
     $("fill").style.width = "0%";
+    $("progress").classList.remove("done");
     $("progress").setAttribute("aria-valuenow", "0");
     $("curve-line").setAttribute("points", "");
     $("curve-spans").textContent = "";
     $("curve-head").setAttribute("x1", "0"); $("curve-head").setAttribute("x2", "0");
+    $("curve-dot").hidden = true;
+    cancelAnimationFrame(state.curveAnim);
     $("curve-caption").textContent = "Listening for action";
     $("cancel").disabled = false;
     $("cancel").textContent = "Cancel";
+  }
+
+  function setStage(text) {
+    if (text === state.stage) return;
+    state.stage = text;
+    const s = $("stage");
+    s.textContent = text;
+    if (!reduced.matches) { s.classList.remove("swap"); void s.offsetWidth; s.classList.add("swap"); }
   }
 
   function listen(id) {
@@ -280,7 +406,7 @@
       return;
     }
     const pct = Math.round((ev.fraction || 0) * 100);
-    $("stage").textContent = ev.label || "";
+    if (ev.label) setStage(ev.label);
     $("fill").style.width = pct + "%";
     $("progress").setAttribute("aria-valuenow", String(pct));
     $("detail").textContent = ev.detail || "";
@@ -330,30 +456,61 @@
     if (last) { $("curve-head").setAttribute("x1", String(last[0] * 1000)); $("curve-head").setAttribute("x2", String(last[0] * 1000)); }
   }
 
+  /** Place the leading dot over the curve at viewBox point (x 0..1000, y 0..220). */
+  function dotAt(x, y) {
+    const dot = $("curve-dot");
+    const svg = $("curve");
+    dot.hidden = false;
+    dot.style.left = (x / 1000 * svg.clientWidth) + "px";
+    dot.style.top = (y / 220 * svg.clientHeight) + "px";
+  }
+
   function drawCurve(data) {
     const n = data.curve.length;
     const total = n * data.step_s || 1;
-    const pts = data.curve.map((v, i) => ((i + 0.5) * data.step_s / total * 1000).toFixed(1) + "," + (215 - Math.min(1, Math.max(0, v)) * 200).toFixed(1));
-    $("curve-line").setAttribute("points", pts.join(" "));
-    $("curve-head").setAttribute("x1", "1000"); $("curve-head").setAttribute("x2", "1000");
+    const pts = data.curve.map((v, i) => [(i + 0.5) * data.step_s / total * 1000, 215 - Math.min(1, Math.max(0, v)) * 200]);
+    const line = $("curve-line");
+    const fmt = (k) => pts.slice(0, k).map(([x, y]) => x.toFixed(1) + "," + y.toFixed(1)).join(" ");
     const g = $("curve-spans");
     g.textContent = "";
-    data.spans.forEach((sp, i) => {
-      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-      rect.setAttribute("class", "span");
-      rect.setAttribute("x", String(sp.start / total * 1000));
-      rect.setAttribute("width", String(Math.max(2, (sp.end - sp.start) / total * 1000)));
-      rect.setAttribute("y", "0"); rect.setAttribute("height", "220");
-      if (!reduced.matches) rect.style.animationDelay = (i * 90) + "ms";
-      const peak = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      peak.setAttribute("class", "span-peak");
-      const x = String(sp.peak_t / total * 1000);
-      peak.setAttribute("x1", x); peak.setAttribute("x2", x);
-      peak.setAttribute("y1", String(215 - Math.min(1, sp.score) * 200)); peak.setAttribute("y2", "220");
-      g.append(rect, peak);
-    });
-    const k = data.spans.length;
-    $("curve-caption").textContent = k ? k + (k === 1 ? " moment" : " moments") + " cleared the action bar" : "No moment cleared the action bar";
+    const addSpans = () => {
+      data.spans.forEach((sp, i) => {
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("class", "span");
+        rect.setAttribute("x", String(sp.start / total * 1000));
+        rect.setAttribute("width", String(Math.max(2, (sp.end - sp.start) / total * 1000)));
+        rect.setAttribute("y", "0"); rect.setAttribute("height", "220");
+        if (!reduced.matches) rect.style.animationDelay = (i * 90) + "ms";
+        const peak = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        peak.setAttribute("class", "span-peak");
+        const x = String(sp.peak_t / total * 1000);
+        peak.setAttribute("x1", x); peak.setAttribute("x2", x);
+        peak.setAttribute("y1", String(215 - Math.min(1, sp.score) * 200)); peak.setAttribute("y2", "220");
+        g.append(rect, peak);
+      });
+      const k = data.spans.length;
+      $("curve-caption").textContent = k ? k + (k === 1 ? " moment" : " moments") + " cleared the action bar" : "No moment cleared the action bar";
+    };
+    $("curve-head").setAttribute("x1", "1000"); $("curve-head").setAttribute("x2", "1000");
+    cancelAnimationFrame(state.curveAnim);
+    if (reduced.matches || n < 2) {
+      line.setAttribute("points", fmt(n));
+      $("curve-dot").hidden = true;
+      addSpans();
+      return;
+    }
+    // the curve draws itself left to right behind a leading dot, then the spans pop in
+    const t0 = performance.now(), dur = 900;
+    const step = (now) => {
+      const f = Math.min(1, (now - t0) / dur);
+      const e = 1 - Math.pow(1 - f, 3);
+      const k = Math.max(2, Math.round(e * n));
+      line.setAttribute("points", fmt(k));
+      dotAt(pts[k - 1][0], pts[k - 1][1]);
+      if (f < 1) state.curveAnim = requestAnimationFrame(step);
+      else { $("curve-dot").hidden = true; addSpans(); }
+    };
+    state.curveAnim = requestAnimationFrame(step);
   }
 
   async function cancel() {
@@ -364,12 +521,24 @@
   }
 
   async function finish(result, error) {
-    if (result === "cancelled") { toast("Stopped. Nothing was left half-written."); show("home"); return; }
+    if (result === "cancelled") { show("home"); $("home-note").textContent = "Stopped. Nothing was left half-written; the analysis so far is saved for next time."; return; }
     if (result === "error") { $("error-text").textContent = error || "Unknown problem."; show("error"); return; }
-    try {
-      state.job = await api("/api/jobs/" + state.jobId);
-    } catch (e) { $("error-text").textContent = e.message; show("error"); return; }
-    renderResults(state.job);
+    // the done moment: the bar sweeps to magenta and the title changes before the cards arrive
+    $("fill").style.width = "100%";
+    $("progress").setAttribute("aria-valuenow", "100");
+    $("progress").classList.add("done");
+    setStage("Your clips");
+    $("eta").textContent = "";
+    $("cancel").disabled = true;
+    const settle = reduced.matches ? 0 : 650;
+    const [job] = await Promise.all([
+      api("/api/jobs/" + state.jobId).catch((e) => e),
+      new Promise((r) => setTimeout(r, settle)),
+    ]);
+    if (job instanceof Error) { $("error-text").textContent = job.message; show("error"); return; }
+    state.job = job;
+    hintsDone();
+    renderResults(job);
     $("nav-results").hidden = false;
     show("results");
     loadCaps();
@@ -381,35 +550,52 @@
     const t = r.timings || {};
     const secs = Math.round(t.total_s || job.elapsed || 0);
     const total = r.total;
-    let sub = total === 0 ? "No moment in " + (r.input.name || "this recording") + " cleared the action bar."
-      : r.ok + " of " + total + (total === 1 ? " clip" : " clips") + " from " + (r.input.name || "the recording");
-    if (r.input.duration_s) sub += " (" + mmss(r.input.duration_s) + ")";
+    const name = r.input.name || "the recording";
+    let sub = total === 0 ? "From " + name : r.ok + " of " + total + (total === 1 ? " clip" : " clips") + " from " + name;
+    if (r.input.duration_s) sub += " (" + length(r.input.duration_s) + ")";
     sub += ", in " + (secs < 60 ? secs + " s" : Math.round(secs / 60) + " min") + (r.cached ? " using the saved analysis" : "") + (r.kept ? " (" + r.kept + " unchanged from last time)" : "") + ".";
     $("results-sub").textContent = sub;
     const notes = $("result-notes");
     notes.textContent = "";
     for (const w of (r.warnings || []).concat(job.warnings || [])) {
       if (notes.children.length >= 4) break;
+      if (total === 0 && /no action peaks/.test(w)) continue; // the empty state says it in plain words
       if (!Array.from(notes.children).some((c) => c.textContent === w)) notes.append(el("li", "", w));
+    }
+    const empty = $("empty-results");
+    empty.hidden = total !== 0;
+    $("grid-help").hidden = total === 0;
+    if (total === 0) {
+      const low = r.bar === "low";
+      $("empty-title").textContent = low ? "Still nothing stood out." : "Nothing stood out.";
+      $("empty-text").textContent = low
+        ? "Even the low bar found no burst of sound and motion together. A calm recording can be like that; a different stretch of play may do better."
+        : "Try a lower bar: quieter moments get through.";
+      $("lower-bar").hidden = low;
     }
     const grid = $("grid");
     grid.textContent = "";
+    grid.classList.remove("enter");
     const tpl = $("card-tpl");
+    let i = 0;
     for (const c of r.clips) {
       const node = tpl.content.firstElementChild.cloneNode(true);
       node.dataset.file = c.file;
+      node.style.setProperty("--i", String(Math.min(i, 12)));
+      node.tabIndex = i === 0 ? 0 : -1;
       if (c.status === "failed" || !c.file) node.classList.add("failed");
       const video = node.querySelector(".card-video");
       if (c.file) video.src = tokened("/clips/" + job.id + "/" + encodeURIComponent(c.file));
       else { video.remove(); node.querySelector(".card-play").remove(); }
       node.querySelector(".rank").textContent = String(c.rank);
+      if (i === 0 && c.file && total > 1) { node.classList.add("best"); node.querySelector(".best").hidden = false; }
       node.querySelector(".time").textContent = mmss(c.start) + "–" + mmss(c.end);
-      node.querySelector(".score").textContent = "score " + c.score.toFixed(2);
+      node.querySelector(".score").textContent = "Score " + c.score.toFixed(2) + " · " + Math.round(c.duration_s || (c.end - c.start)) + " s";
       node.querySelector(".card-title").textContent = c.title || "";
       node.querySelector(".why").textContent = c.why || "";
       node.dataset.peak = String(c.peak_offset || 0);
       node.querySelector(".card-hook").textContent = c.hook || "";
-      const label = "Clip " + c.rank + ", " + mmss(c.start) + " to " + mmss(c.end) + (c.title ? ", " + c.title : "");
+      const label = "Clip " + c.rank + ", " + mmss(c.start) + " to " + mmss(c.end) + (c.why ? ", " + c.why : "") + (c.title ? ", " + c.title : "");
       node.setAttribute("aria-label", label);
       if (c.file) wireCard(node, video);
       else { node.querySelector('[data-act="open"]').hidden = true; node.querySelector('[data-act="reveal"]').hidden = true; node.querySelector('[data-act="delete"]').hidden = true; }
@@ -418,9 +604,16 @@
         if (b) cardAction(b.dataset.act, c, node);
       });
       grid.append(node);
+      i++;
+    }
+    if (!reduced.matches) {
+      // entrance once: the class comes off afterwards so re-showing the screen does not replay it
+      void grid.offsetWidth; grid.classList.add("enter");
+      setTimeout(() => grid.classList.remove("enter"), 480 + 50 * Math.min(i, 12) + 100);
     }
     $("export").href = tokened("/clips/" + job.id + "/report.json");
     $("export").hidden = !r.report_file;
+    $("dock-status").textContent = "";
   }
 
   function wireCard(node, video) {
@@ -430,10 +623,11 @@
     video.addEventListener("timeupdate", setPlayed);
     // the poster is the clip's own peak frame
     const peak = parseFloat(node.dataset.peak || "0");
-    video.addEventListener("loadedmetadata", () => { if (video.paused && video.duration) video.currentTime = Math.min(video.duration - 0.1, Math.max(0.1, peak)); }, { once: true });
+    const toPeak = () => { if (video.duration) video.currentTime = Math.min(video.duration - 0.1, Math.max(0.1, peak)); };
+    video.addEventListener("loadedmetadata", () => { if (video.paused) toPeak(); }, { once: true });
     let dragging = false;
     media.addEventListener("pointerenter", () => { if (!node.classList.contains("playing") && !reduced.matches) { video.muted = true; video.currentTime = 0; video.play().catch(() => {}); } });
-    media.addEventListener("pointerleave", () => { dragging = false; if (!node.classList.contains("playing")) { video.pause(); if (video.duration) video.currentTime = Math.min(video.duration - 0.1, Math.max(0.1, peak)); setPlayed(); } });
+    media.addEventListener("pointerleave", () => { dragging = false; if (!node.classList.contains("playing")) { video.pause(); toPeak(); setPlayed(); } });
     const scrub = (e) => {
       const rect = media.getBoundingClientRect();
       const f = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
@@ -442,25 +636,59 @@
     media.addEventListener("pointerdown", (e) => { if (e.target === video) { dragging = true; video.pause(); scrub(e); } });
     media.addEventListener("pointermove", (e) => { if (dragging) scrub(e); });
     media.addEventListener("pointerup", () => { dragging = false; });
-    video.addEventListener("click", () => toggleSound());
-    const toggleSound = () => {
-      if (node.classList.contains("playing")) { node.classList.remove("playing"); video.pause(); video.muted = true; play.setAttribute("aria-label", "Play with sound"); return; }
+    const stopOthers = () => {
       for (const other of document.querySelectorAll(".card.playing")) { other.classList.remove("playing"); const v = other.querySelector("video"); v.pause(); v.muted = true; other.querySelector(".card-play").setAttribute("aria-label", "Play with sound"); }
-      node.classList.add("playing"); video.muted = false; video.play().catch(() => {}); play.setAttribute("aria-label", "Pause");
     };
+    const soundOn = () => { stopOthers(); node.classList.add("playing"); video.muted = false; video.play().catch(() => {}); play.setAttribute("aria-label", "Pause"); };
+    const soundOff = () => { node.classList.remove("playing"); video.pause(); video.muted = true; play.setAttribute("aria-label", "Play with sound"); };
+    const toggleSound = () => (node.classList.contains("playing") ? soundOff() : soundOn());
+    video.addEventListener("click", toggleSound);
     play.addEventListener("click", toggleSound);
-    play.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); video.currentTime = Math.max(0, video.currentTime + (e.key === "ArrowRight" ? 2 : -2)); setPlayed(); }
+    node.soundOn = soundOn; node.soundOff = soundOff;
+    node.addEventListener("keydown", (e) => {
+      if (e.target.closest("[data-act], .card-confirm")) return;
+      if (e.key === "Enter") { e.preventDefault(); toggleSound(); }
+      else if (e.key === " ") { e.preventDefault(); if (!video.paused) soundOff(); else soundOn(); }
+      else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        if (e.target !== play) return;
+        e.preventDefault(); video.currentTime = Math.max(0, video.currentTime + (e.key === "ArrowRight" ? 2 : -2)); setPlayed();
+      }
     });
-    video.addEventListener("ended", () => { node.classList.remove("playing"); video.muted = true; play.setAttribute("aria-label", "Play with sound"); });
+    video.addEventListener("ended", () => soundOff());
+  }
+
+  /** Arrow keys move between cards (roving tabindex); Enter/Space are handled per card. */
+  function wireGridKeys() {
+    const grid = $("grid");
+    grid.addEventListener("keydown", (e) => {
+      if (!e.key.startsWith("Arrow")) return;
+      if (e.target.matches(".card-play, [data-act]")) return;
+      const cards = Array.from(grid.querySelectorAll(".card"));
+      const cur = e.target.closest(".card");
+      const i = cards.indexOf(cur);
+      if (i < 0) return;
+      const cols = (getComputedStyle(grid).gridTemplateColumns.match(/\d/g) ? getComputedStyle(grid).gridTemplateColumns.split(" ").length : 1);
+      const delta = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols }[e.key];
+      if (!delta) return;
+      const next = cards[Math.min(cards.length - 1, Math.max(0, i + delta))];
+      if (next && next !== cur) {
+        e.preventDefault();
+        cur.tabIndex = -1; next.tabIndex = 0; next.focus();
+      }
+    });
+    grid.addEventListener("focusin", (e) => {
+      const card = e.target.closest(".card");
+      if (!card) return;
+      for (const c of grid.querySelectorAll(".card")) c.tabIndex = c === card ? 0 : -1;
+    });
   }
 
   async function cardAction(act, clip, node) {
     const id = state.jobId;
     try {
-      if (act === "open") await api("/api/jobs/" + id + "/open", { body: { what: "file", file: clip.file } });
-      else if (act === "reveal") await api("/api/jobs/" + id + "/open", { body: { what: "reveal", file: clip.file } });
-      else if (act === "copy") { await copyText(clip.post || ""); toast("Copied."); }
+      if (act === "open") { await api("/api/jobs/" + id + "/open", { body: { what: "file", file: clip.file } }); dockSay("Opened " + clip.file); }
+      else if (act === "reveal") { await api("/api/jobs/" + id + "/open", { body: { what: "reveal", file: clip.file } }); dockSay("Shown in its folder"); }
+      else if (act === "copy") { await copyText(clip.post || ""); dockSay("Post text copied"); }
       else if (act === "delete") { node.querySelector(".card-actions").hidden = true; const c = node.querySelector(".card-confirm"); c.hidden = false; c.querySelector('[data-act="delete-yes"]').focus(); }
       else if (act === "delete-no") { node.querySelector(".card-confirm").hidden = true; node.querySelector(".card-actions").hidden = false; node.querySelector('[data-act="delete"]').focus(); }
       else if (act === "delete-yes") {
@@ -470,7 +698,7 @@
         const v = node.querySelector("video"); if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
         for (const b of node.querySelectorAll("[data-act]")) b.disabled = true;
         node.querySelector(".why").textContent = "Deleted.";
-        toast("Deleted " + clip.file);
+        dockSay("Deleted " + clip.file);
       }
     } catch (e) { toast(e.message); }
   }
@@ -550,17 +778,22 @@
   // ---------------------------------------------------------------- wiring
   function wire() {
     wireDrop();
+    wireGridKeys();
     $("choose-file").addEventListener("click", () => pick("files"));
     $("choose-folder").addEventListener("click", () => pick("folder"));
+    $("change-file").addEventListener("click", () => pick("files"));
     $("change-out").addEventListener("click", () => pick("out"));
     $("clear-inputs").addEventListener("click", () => { state.outDirCustom = false; setInputs([]); $("choose-file").focus(); });
-    $("count").addEventListener("input", () => { $("count-out").value = $("count").value; });
+    $("count").addEventListener("input", countChanged);
     $("start").addEventListener("click", start);
     $("settings").addEventListener("submit", (e) => { e.preventDefault(); start(); });
     $("cancel").addEventListener("click", cancel);
-    $("open-folder").addEventListener("click", () => api("/api/jobs/" + state.jobId + "/open", { body: { what: "folder" } }).catch((e) => toast(e.message)));
+    $("hints-dismiss").addEventListener("click", hintsDone);
+    $("open-folder").addEventListener("click", () => api("/api/jobs/" + state.jobId + "/open", { body: { what: "folder" } }).then(() => dockSay("Folder opened")).catch((e) => toast(e.message)));
     $("rerun").addEventListener("click", () => { show("home"); $("count").focus(); });
+    $("lower-bar").addEventListener("click", () => { document.querySelector('input[name=bar][value="low"]').checked = true; start(); });
     $("error-back").addEventListener("click", () => show("home"));
+    $("error-setup").addEventListener("click", () => openSetup());
     $("forget").addEventListener("click", async () => { try { await api("/api/recent/clear", { body: {} }); renderRecent([]); } catch (e) { toast(e.message); } });
     $("quit").addEventListener("click", async () => { try { await api("/api/quit", { body: {} }); } catch (e) { /* server is gone */ } document.body.textContent = "Clip Anything has quit. You can close this tab."; });
     for (const b of document.querySelectorAll(".nav-btn")) b.addEventListener("click", () => {
@@ -569,9 +802,12 @@
       else show("home");
     });
     window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("screen-run").hidden) cancel(); });
+    window.addEventListener("resize", () => { if (!$("curve-dot").hidden) $("curve-dot").hidden = true; });
   }
 
   wire();
+  hints();
+  countChanged();
   setInputs([]);
   loadCaps();
 })();
