@@ -42,7 +42,7 @@ Rich progress UI: probe → audio → video → score → (vision) → render N/
 - speech/facecam (M1 Max, base.en int8): model load 0.9 s once; 20 s clip with speech 1.4 s (≈ 14x realtime), silent 0.05–0.15 s; facecam detect 1.3 s/file; captioned 20 s clip render 7.2 s (1 worker), facecam layout 3.2 s
 
 ## File ownership right now
-(all released; 05-01 done — owner/main session publishes per .planning/PUBLISH.md)
+- 10-01 looking-for (branch `looking-for`, PR pending): scoring.py, audio_signals.py, video_signals.py, config.py, clip-anything.toml, ai.py (Reranker + brief only), ai_prompts.py, cli.py (flags), pipeline.py (n_select + report.ai lines), report.py (Report.ai), app/jobs.py (JobRequest brief/preset, why words), app/static (settings strip brief+chips, card match line), scripts/eval.py, docs/reference.md + docs/ai-mode.md (option rows), README one appended line under "What's on by default". Others: reels (README GIF/video + site), notices (README privacy + app footer/About + docs), robust-run (gui.py, server.py errors, lazy-import guards in speech/ai/facecam, cache tests)
 
 ## Phase nodes
 - 01-core (steps 1–4) — DONE 2026-11-12, see phases/01-core/01-01-SUMMARY.md (audio-only; `pipeline.run()` + CLI + render work; cache at .clipanything/<id>/signals.npz; Signals.arrays raw, scoring normalises)
