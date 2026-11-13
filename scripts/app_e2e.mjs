@@ -81,6 +81,14 @@ try {
   await ready(page);
   check((await page.textContent("#ready-text")) === "Ready", "ready line is a single Ready dot");
   check(!(await page.isHidden("#hints")), "first-run hints show on a fresh profile");
+  check((await page.textContent("#hint-local")).includes("Everything stays on this computer unless you turn on cloud AI"), "first-run strip carries the privacy line");
+  await page.click("#about");
+  await page.waitForSelector("#screen-about:not([hidden])");
+  check(/^Version \d/.test(await page.textContent("#about-version")), "About screen shows the version (" + (await page.textContent("#about-version")) + ")");
+  check((await page.$$("#screen-about .about-list li")).length === 5 && (await page.textContent("#screen-about")).includes("Need help or have an idea?"), "About screen lists the 5 privacy bullets and the help line");
+  check(await page.$$eval("#screen-about a[target=_blank]", (as) => as.every((a) => a.rel.includes("noopener") && a.href.startsWith("https://"))), "About links are https and open with noopener");
+  await page.keyboard.press("Escape");
+  check(!(await page.isHidden("#screen-home")), "Escape leaves the About screen");
   check((await page.textContent("#start")) === "Make 10 clips", "primary button names the count");
   await page.screenshot({ path: path.join(shots, "01-home-1280.png") });
   await page.fill("#count", "4");
@@ -223,7 +231,7 @@ try {
   await page.click("#clear-inputs");
   await page.keyboard.press("Tab");
   const order = [];
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < 40; i++) {
     const id = await page.evaluate(() => { const a = document.activeElement; return a.id || a.name || a.className; });
     order.push(id);
     await page.keyboard.press("Tab");

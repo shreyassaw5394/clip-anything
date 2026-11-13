@@ -33,6 +33,21 @@ External programs (never bundled, found on PATH):
 
 The full transitive list with versions is in THIRD_PARTY_LICENSES.md.
 
-Clip Anything makes no network connection except the optional Whisper model
-download (asked first) and, with --vision, the local Ollama server at 127.0.0.1.
+Desktop app builds (GitHub Releases) additionally ship ffmpeg/ffprobe as separate
+programs in the "ffmpeg" folder: Windows from BtbN FFmpeg-Builds
+(autobuild-2026-11-12-15-40, ffmpeg n9.0.2 win64-gpl-shared), macOS from
+eugeneware/ffmpeg-static b6.1.1 (ffmpeg 6.0; arm64 build by osxexperts.net,
+x86_64 build by evermeet.cx). Both are GPL builds (--enable-gpl
+--enable-version3, libx264/libx265). Their licence texts travel in the bundle
+(ffmpeg/LICENSE.txt, ffmpeg/COPYING.GPLv3.txt and the LGPL texts) and are
+listed in THIRD_PARTY_NOTICE.txt next to this file; sources at
+https://ffmpeg.org/download.html. Run `ffmpeg -version` / `ffmpeg -L` in that
+folder for the build's own configuration and licence statement.
+
+Clip Anything makes no network connection except the ones you turn on: the
+optional Whisper model download (asked first), the local Ollama server at
+127.0.0.1 (--ai, --vision; `ollama pull` downloads a model), and, only when
+you set your own key, the OpenAI or Anthropic API (--ai-provider), which then
+receives small frames and caption text for the candidate moments.
+Details: docs/privacy.md.
 Game titles are mentioned only to describe recordings; no affiliation is implied.

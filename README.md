@@ -178,15 +178,19 @@ Copy [`.cursor/skills/clip-anything/`](.cursor/skills/clip-anything/) into your 
 **ChatGPT, Copilot, or anything else**
 Paste the "Change what it makes" list above and the one-line command into the chat and ask it to write the command for your file. Then run that line yourself in PowerShell or Terminal.
 
-## Privacy
+## Privacy and safety
 
-Nothing leaves your computer. The recording is read and the clips are written on your own disk. There is no account, no telemetry and nothing phones home. The only network use is the optional, one-time download of the speech model for captions, which asks first. The optional `--vision` pass talks only to an Ollama server on your own machine.
-
+- Nothing leaves your computer by default: no account, no upload, no telemetry. The recording, clips, `report.json` and the `.clipanything` analysis cache all stay on your disk.
+- The only network use is what you turn on: the one-time captions model download from Hugging Face (asks first), a local Ollama model on `127.0.0.1`, or a cloud AI provider (OpenAI/Anthropic) that receives small frames and caption text only when you set your own key. The Setup screen installs ffmpeg and friends only after you say yes to each command.
+- The desktop app runs on `127.0.0.1` with a per-launch token; it is not signed yet, so macOS and Windows warn once. Check the download against `SHA256SUMS.txt` on the release page ([docs/desktop.md](docs/desktop.md)).
+- Clip choices, captions, titles and hooks are automated (and AI text is labelled `ai_generated`); they can be wrong. You are responsible for the rights to what you process and post: game video policies, music in the stream, other people's voice or likeness.
+- Free, non-commercial, MIT, provided as is. Details: [docs/privacy.md](docs/privacy.md) and [docs/terms.md](docs/terms.md).
 ## Problems?
 
 - Ask on [Discord](https://discord.gg/s8wj7tBAM).
 - Ran it on a real recording? Fill in the three-question [Tried it](https://github.com/shreyassaw5394/clip-anything/issues/new?template=tried-it.md) issue. It is the most useful thing you can send.
 - Something broke: open a [bug](https://github.com/shreyassaw5394/clip-anything/issues/new?template=bug.md). Security problems go to [SECURITY.md](SECURITY.md).
+- Need help or have an idea? [Discord](https://discord.gg/s8wj7tBAM), [email](mailto:shreyassaw@gmail.com), or [upvote the hosted version](https://github.com/shreyassaw5394/shipatmidnight-ideas/issues/7).
 
 ## About
 

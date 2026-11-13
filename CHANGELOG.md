@@ -4,6 +4,7 @@ All notable changes to Clip Anything. Dates are the day the change landed.
 
 ## Unreleased
 
+- Privacy and terms written down: `docs/privacy.md`, `docs/terms.md`, an About screen in the app (version, licences, privacy summary), a first-run line, GPL/LGPL texts for the bundled ffmpeg in the desktop app, and the same notices on the npm launcher, the agent skill and the release notes
 - The desktop app is a real product UI: drop zone with recent runs, one visible settings strip, a run screen with a live action-score curve and time estimate, a results grid of playable vertical clips with per-clip actions, a setup checklist with consent per install. Same page in a native window (`[app]` extra, pywebview) or the default browser; served from 127.0.0.1 with a per-launch token
 - `clip-anything app` opens it from the CLI; `clip-anything-gui` still works
 - Pipeline progress events carry a live audio level and the final score curve with the picked spans
