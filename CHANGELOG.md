@@ -8,6 +8,13 @@ All notable changes to Clip Anything. Dates are the day the change landed.
 - `clip-anything app` opens it from the CLI; `clip-anything-gui` still works
 - Pipeline progress events carry a live audio level and the final score curve with the picked spans
 
+## 0.4.1 — 2026-11-13
+
+- A failure in an optional part (captions, AI, facecam) no longer stops a run; it is switched off with a note in the report
+- Problems are written to a log file (Application Support / AppData) and the app says where
+- Corrupt cache or preference files are ignored and rebuilt
+- A reminder to move the app to Applications when it is launched from the disk image
+
 ## 0.4.0 — 2026-11-13
 
 - The app, made intuitive: a drop-zone hero that names your file, a "Make N clips" button, plain-word settings with one-line helpers, first-run hints, human empty and error states, a Best moment badge, keyboard control of clips, smoother motion, system dark mode, remembered window size and output folder
