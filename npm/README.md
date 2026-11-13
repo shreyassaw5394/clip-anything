@@ -16,4 +16,7 @@ Needs:
 
 All options, exit codes, the config file and the full documentation live in the main README. If you already have uv, `uvx clip-anything gameplay.mp4` is the same thing with one hop fewer.
 
+Privacy: nothing leaves your computer unless you turn on captions (one-time model download, asks first), a local Ollama model, or cloud AI with your own OpenAI/Anthropic key; no account, no telemetry ([docs/privacy.md](https://github.com/shreyassaw5394/clip-anything/blob/main/docs/privacy.md)).
+A free, non-commercial passion project, provided as is without warranty; clip picks, captions and AI titles can be wrong and you are responsible for the rights to what you process and post ([docs/terms.md](https://github.com/shreyassaw5394/clip-anything/blob/main/docs/terms.md)).
+
 Zero dependencies. MIT. Game names appear only to describe what a recording contains; Clip Anything is not affiliated with or endorsed by any game publisher.

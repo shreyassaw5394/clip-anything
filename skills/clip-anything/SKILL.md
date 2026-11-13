@@ -13,7 +13,9 @@ metadata:
 
 ## Purpose
 
-Turns a long recording (one file, several files, or a folder that is one session) into the top N vertical highlight clips using the free, local `clip-anything` CLI. The skill drives the tool, shows what it would cut before it cuts, and reads the report so the user knows why each moment was picked. It never uploads, posts or sends footage anywhere; the CLI itself makes no network calls except an optional, one-time Whisper model download that asks first.
+Turns a long recording (one file, several files, or a folder that is one session) into the top N vertical highlight clips using the free, local `clip-anything` CLI. The skill drives the tool, shows what it would cut before it cuts, and reads the report so the user knows why each moment was picked. It never uploads, posts or sends footage anywhere; the CLI itself makes no network calls except an optional, one-time Whisper model download that asks first, local Ollama on 127.0.0.1, or a cloud AI provider only when the user has set their own OpenAI/Anthropic key (frames and caption text then leave the machine; say so before using `--ai` in that case).
+
+Disclosure to pass on: Clip Anything is a free, non-commercial passion project provided as is, without warranty; picks, captions and AI titles can be wrong, and the user is responsible for the rights to the recordings they process and the clips they post (see docs/privacy.md and docs/terms.md in the repository).
 
 ## Prerequisites
 

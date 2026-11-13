@@ -4,7 +4,7 @@
 
   const TOKEN = new URLSearchParams(location.search).get("t") || "";
   const $ = (id) => document.getElementById(id);
-  const screens = ["home", "run", "results", "setup", "error"];
+  const screens = ["home", "run", "results", "setup", "error", "about"];
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   const FIRST_RUN_KEY = "clip-anything.first-run";
 
@@ -144,6 +144,7 @@
     else if (c.whisper === "download") $("captions-note").textContent = "Words appear on screen as they are said. The first captioned run downloads a 150 MB speech model once.";
     $("count").max = String(c.max_count || 20);
     $("version").textContent = "v" + c.version;
+    $("about-version").textContent = "Version " + c.version + (c.window === "webview" ? ", desktop window" : ", in your browser") + ". Served from 127.0.0.1 with a per-launch token.";
     $("quit").hidden = c.window !== "browser";
     if (c.ai.ok && c.ai.cloud) {
       $("ai-cloud").hidden = false;
@@ -819,6 +820,9 @@
     $("lower-bar").addEventListener("click", () => { document.querySelector('input[name=bar][value="low"]').checked = true; start(); });
     $("error-back").addEventListener("click", () => show("home"));
     $("error-setup").addEventListener("click", () => openSetup());
+    $("about").addEventListener("click", () => show("about"));
+    $("hint-about").addEventListener("click", () => show("about"));
+    $("about-back").addEventListener("click", () => show("home"));
     $("forget").addEventListener("click", async () => { try { await api("/api/recent/clear", { body: {} }); renderRecent([]); } catch (e) { toast(e.message); } });
     $("quit").addEventListener("click", async () => { try { await api("/api/quit", { body: {} }); } catch (e) { /* server is gone */ } document.body.textContent = "Clip Anything has quit. You can close this tab."; });
     for (const b of document.querySelectorAll(".nav-btn")) b.addEventListener("click", () => {
@@ -826,7 +830,7 @@
       else if (b.dataset.nav === "results" && state.job) show("results");
       else show("home");
     });
-    window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("screen-run").hidden) cancel(); });
+    window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("screen-run").hidden) cancel(); else if (e.key === "Escape" && !$("screen-about").hidden) show("home"); });
     window.addEventListener("resize", () => { if (!$("curve-dot").hidden) $("curve-dot").hidden = true; });
   }
 

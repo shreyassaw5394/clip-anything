@@ -44,11 +44,34 @@ they are used unmodified as separate libraries, which their licences allow.
 | httpx2, httpcore2, anyio, h11, idna, truststore, pydantic, pydantic_core, annotated-types, typing-inspection | MIT / BSD-3-Clause | transitive, via huggingface_hub |
 | Whisper model weights (`Systran/faster-whisper-*`) | MIT (OpenAI Whisper) | downloaded once from Hugging Face, only after you agree (`--yes`) |
 
-## External programs (never bundled, found on your PATH)
+## Desktop app builds only (GitHub Releases)
+
+| Component | Licence | Build |
+|---|---|---|
+| ffmpeg / ffprobe, Windows | GPL-3.0 (`--enable-gpl --enable-version3`; libx264, libx265) | BtbN FFmpeg-Builds `autobuild-2026-11-12-15-40`, `ffmpeg-n9.0.2-…-win64-gpl-shared-9.0.zip`, https://github.com/BtbN/FFmpeg-Builds |
+| ffmpeg / ffprobe, macOS | GPL-3.0 (`--enable-gpl --enable-version3`; libx264, libx265) | eugeneware/ffmpeg-static `b6.1.1` (ffmpeg 6.0): arm64 from https://osxexperts.net, x86_64 from https://evermeet.cx/ffmpeg/ |
+| Python runtime, pywebview, PyInstaller bootloader | PSF-2.0, BSD-3-Clause, GPL-2.0-with-bootloader-exception | bundled by PyInstaller |
+
+ffmpeg runs as a separate process and is not linked into Clip Anything. The GPL and LGPL
+texts and each build's own licence file are in the `ffmpeg` folder of the app
+(`packaging/licences` in this repository); `ffmpeg -version` prints the exact configuration.
+Pinned URLs and SHA-256 sums: `packaging/fetch_ffmpeg.py`.
+
+## External programs (never bundled by the PyPI package, found on your PATH)
 
 | Program | Licence | Project |
 |---|---|---|
 | FFmpeg / ffprobe | LGPL-2.1+ or GPL-2.0+ depending on how your copy was built | https://ffmpeg.org |
-| Ollama (optional, `--vision`) | MIT; the vision models you pull carry their own licences (Qwen: Apache-2.0; Gemma: Gemma Terms of Use; others vary) | https://ollama.com |
+| Ollama (optional, `--ai`, `--vision`) | MIT; the vision models you pull carry their own licences (Qwen: Apache-2.0; Gemma: Gemma Terms of Use; others vary) | https://ollama.com |
+
+## Optional cloud services (only with your own key)
+
+| Service | Terms | Used by |
+|---|---|---|
+| OpenAI API | https://openai.com/policies | `--ai-provider openai` / `OPENAI_API_KEY` |
+| Anthropic API | https://www.anthropic.com/legal | `--ai-provider anthropic` / `ANTHROPIC_API_KEY` |
+| Hugging Face Hub | https://huggingface.co/terms-of-service | one-time Whisper model download |
+
+What each receives is in `docs/privacy.md`.
 
 To regenerate: `uv venv /tmp/v && uv pip install -p /tmp/v/bin/python 'dist/*.whl[captions]' pip-licenses && /tmp/v/bin/pip-licenses --from=mixed --with-urls --format=markdown`.

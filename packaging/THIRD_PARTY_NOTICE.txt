@@ -5,13 +5,27 @@ folder are listed with their licences in THIRD_PARTY_LICENSES.md.
 
 ffmpeg and ffprobe (folder "ffmpeg") are separate programs that Clip Anything
 starts as child processes; they are not linked into it. They are prebuilt
-binaries, used unmodified, licensed under the GNU GPL v2 or later (the builds
-enable libx264). The full licence text is in ffmpeg/LICENSE.txt. Source code and
-build scripts for the exact builds:
-  Windows: https://github.com/BtbN/FFmpeg-Builds (autobuild-2026-11-12-15-40, win64-gpl-shared)
-  macOS:   https://github.com/eugeneware/ffmpeg-static (b6.1.1; sources via https://ffmpeg.org)
+binaries, used unmodified, configured with --enable-gpl --enable-version3
+(libx264, libx265 and other GPL components), so the GNU GPL version 3 applies
+to them. Licence texts in the ffmpeg folder: LICENSE.txt (the build's own
+notice), COPYING.GPLv3.txt, COPYING.GPLv2.txt, COPYING.LGPLv2.1.txt,
+COPYING.LGPLv3.txt and FFMPEG-LICENSE.md. Run `ffmpeg -version` and
+`ffmpeg -L` in that folder for the build's full configuration and its own
+licence statement.
+
+Exact builds (URLs and SHA-256 pinned in packaging/fetch_ffmpeg.py):
+  Windows: BtbN FFmpeg-Builds, release autobuild-2026-11-12-15-40,
+           ffmpeg-n9.0.2-57-gd838f9f9ae-win64-gpl-shared-9.0.zip
+           https://github.com/BtbN/FFmpeg-Builds (build scripts and sources)
+  macOS:   eugeneware/ffmpeg-static b6.1.1 (ffmpeg 6.0)
+           arm64:  https://osxexperts.net   x86_64: https://evermeet.cx/ffmpeg/
+           https://github.com/eugeneware/ffmpeg-static
   ffmpeg source: https://ffmpeg.org/download.html
 Replacing the files in ffmpeg/ with any ffmpeg >= 5.0 build of your own works.
 
-Fonts, tcl/tk and the Python runtime are redistributed under their own
-permissive licences (PSF, Tcl/Tk BSD-style).
+The Python runtime (PSF licence), pywebview (BSD-3-Clause), the PyInstaller
+bootloader (GPL-2.0 with the bootloader exception) and the bundled fonts
+(Barlow, SIL Open Font License 1.1) are redistributed under their own licences.
+
+Privacy and terms: docs/privacy.md and docs/terms.md in the repository, or
+https://shipatmidnight.dev/clip-anything/privacy and /terms.
