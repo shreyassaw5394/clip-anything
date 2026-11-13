@@ -8,6 +8,10 @@ All notable changes to Clip Anything. Dates are the day the change landed.
 - `clip-anything app` opens it from the CLI; `clip-anything-gui` still works
 - Pipeline progress events carry a live audio level and the final score curve with the picked spans
 
+## 0.4.0 — 2026-11-13
+
+- The app, made intuitive: a drop-zone hero that names your file, a "Make N clips" button, plain-word settings with one-line helpers, first-run hints, human empty and error states, a Best moment badge, keyboard control of clips, smoother motion, system dark mode, remembered window size and output folder
+
 ## 0.3.0 — 2026-11-13
 
 - New app for Windows and Mac: drop a recording or a folder, see the action curve draw live, play and scrub the clips, copy post text, re-run with different settings in seconds; a Setup screen with one-click installs
