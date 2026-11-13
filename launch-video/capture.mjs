@@ -109,6 +109,16 @@ try {
   await page.waitForSelector("#ready-dot.ok, #ready-dot.off");
   await overlay();
   await chipText(path.basename(video));
+  await page.uncheck("#captions").catch(() => {});
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.mouse.move(640, 900);
+  await sleep(400);
+  await page.evaluate((home) => {
+    const el = document.getElementById("out-dir");
+    const tidy = () => { if (el.textContent.startsWith(home)) el.textContent = "~" + el.textContent.slice(home.length); };
+    new MutationObserver(tidy).observe(el, { childList: true, characterData: true, subtree: true });
+    tidy();
+  }, homedir());
   await sleep(1400);
   mark("home");
 

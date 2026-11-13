@@ -23,10 +23,10 @@ const FPS = 30;
 const A = [m.home - 1.4, m.start + 0.45];
 const pieces = [
   { from: A[0], to: A[1], speed: 1 },
-  { from: A[1], to: Math.min(A[1] + 2.0, m.markers - 0.6), speed: 1.6 },
-  { from: Math.min(A[1] + 2.0, m.markers - 0.6), to: m.markers - 0.6, len: 1.5 },
-  { from: m.markers - 0.6, to: m.markers + 3.2, speed: 1.6 },
-  { from: m.markers + 3.2, to: m.results - 0.05, len: 2.6 },
+  { from: A[1], to: Math.min(A[1] + 1.6, m.markers - 0.6), speed: 1.6 },
+  { from: Math.min(A[1] + 1.6, m.markers - 0.6), to: m.markers - 0.6, len: 1.0 },
+  { from: m.markers - 0.6, to: m.markers + 3.0, speed: 1.6 },
+  { from: m.markers + 3.0, to: m.results - 0.05, len: 2.0 },
   { from: m.results - 0.05, to: m.end - 0.1, speed: 1 },
 ].filter((p) => p.to - p.from > 0.05);
 for (const p of pieces) p.out = p.len ?? (p.to - p.from) / p.speed;

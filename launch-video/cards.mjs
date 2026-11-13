@@ -30,12 +30,14 @@ body{font-family:"Barlow",sans-serif;color:#111318;-webkit-font-smoothing:antial
 .cap h1{font-family:"Barlow Condensed";font-weight:700;letter-spacing:-.02em;line-height:.95;text-wrap:balance}
 .cap i{display:block;width:72px;height:10px;background:#c4105f}
 .tall .cap{top:236px}.tall .cap h1{font-size:108px}
-.wide .cap{top:auto;bottom:0;left:0;right:0;padding:36px 0 44px;background:linear-gradient(to top,rgba(241,239,233,.96),rgba(241,239,233,0))}.wide .cap h1{font-size:84px}.wide .cap i{width:56px;height:8px}
+.wide .cap{top:auto;bottom:168px;left:0;right:0}.wide .cap h1{font-size:84px;padding:14px 36px 18px;background:rgba(241,239,233,.94)}.wide .cap i{width:56px;height:8px;margin-top:-6px}
 .end{position:absolute;inset:0;background:#f1efe9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:40px;text-align:center}
 .brand{display:flex;align-items:center;gap:20px;font-family:"Barlow Condensed";font-weight:700;font-size:72px;letter-spacing:-.01em}
 .brand svg{width:96px;height:96px}
 .end h1{font-family:"Barlow Condensed";font-weight:700;font-size:136px;line-height:.92;letter-spacing:-.025em;text-wrap:balance;max-width:9em}
 .end p{font-size:40px;color:#4a4c52}
+.end small{position:absolute;left:0;right:0;bottom:120px;font-size:26px;color:#8a8982;text-align:center}
+.wide .end small{bottom:48px}
 .end .url{display:inline-block;margin-top:8px;padding:18px 34px;background:#111318;color:#f1efe9;font-family:"Barlow Condensed";font-weight:700;font-size:56px;letter-spacing:.005em}
 .end .url b{color:#ff5c9d;font-weight:700}
 .wide .end{gap:28px}.wide .end h1{font-size:120px}.wide .brand{font-size:56px}.wide .brand svg{width:72px;height:72px}.wide .end p{font-size:34px}.wide .end .url{font-size:48px;padding:14px 28px}
@@ -44,7 +46,7 @@ const mark = `<svg viewBox="0 0 512 512" aria-hidden="true"><g fill="#111318" op
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 const page_ = (cls, body) => `<!doctype html><html class="${cls}"><head><meta charset="utf-8"><style>${css}</style></head><body>${body}</body></html>`;
 const capHtml = (cls, text) => page_(cls, `<div class="cap"><h1>${esc(text)}</h1><i></i></div>`);
-const endHtml = (cls) => page_(cls, `<div class="end"><div class="brand">${mark}<span>Clip Anything</span></div><h1>Free. Windows and Mac.</h1><p>Your recording in, the best moments out, as vertical clips. Everything stays on your computer.</p><span class="url">shipatmidnight.dev/<b>clip-anything</b></span></div>`);
+const endHtml = (cls) => page_(cls, `<div class="end"><div class="brand">${mark}<span>Clip Anything</span></div><h1>Free. Windows and Mac.</h1><p>Your recording in, the best moments out, as vertical clips. Everything stays on your computer.</p><span class="url">shipatmidnight.dev/<b>clip-anything</b></span><small>Gameplay: Persona 3 Portable, CC BY 3.0 via archive.org</small></div>`);
 
 const browser = await chromium.launch({ executablePath: CHROME, headless: true });
 for (const [cls, w, h] of [["tall", 1080, 1920], ["wide", 1920, 1080]]) {
