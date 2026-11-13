@@ -6,6 +6,7 @@ the clip."""
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -66,9 +67,11 @@ def build_ass(
     width: int = 1080,
     height: int = 1920,
     duration: float | None = None,
+    reaction: str | None = None,
 ) -> str:
     """ASS script with clip-relative times. One Dialogue per spoken word: the whole line is
-    shown, the current word in the highlight colour, so playback never flickers."""
+    shown, the current word in the highlight colour, so playback never flickers. `reaction`
+    (AI mode): a spoken line to feature once, big and upper, while those words are said."""
     sy = height / 1920
     size = int(round(opts.font_size * sy))
     margin_v = int(round(opts.margin_v * sy))
@@ -87,7 +90,10 @@ def build_ass(
         "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
         f"Style: Cap,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,"
-        f"100,100,0,0,1,{outline},0,2,{int(60 * sy)},{int(60 * sy)},{margin_v},1\n\n"
+        f"100,100,0,0,1,{outline},0,2,{int(60 * sy)},{int(60 * sy)},{margin_v},1\n"
+        f"Style: Big,{font},{int(size * 1.5)},{hl_colour(opts)},&H00FFFFFF,&H00000000,"
+        f"&H80000000,-1,0,0,0,100,100,0,0,1,{outline + 2},0,8,{int(60 * sy)},{int(60 * sy)},"
+        f"{int(420 * sy)},1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
@@ -107,7 +113,43 @@ def build_ass(
                 t = _esc(other.text)
                 parts.append(f"{{\\c{hl}&}}{t}{{\\c&HFFFFFF&}}" if j == i else t)
             events.append(f"Dialogue: 0,{_ts(start)},{_ts(end)},Cap,,0,0,0,,{' '.join(parts)}")
+    span = reaction_span(words, reaction) if reaction else None
+    if span is not None:
+        start, end = span
+        if duration is not None:
+            end = min(end, duration)
+        if end > start:
+            events.append(
+                f"Dialogue: 1,{_ts(start)},{_ts(end)},Big,,0,0,0,,{_esc(reaction.upper())}"
+            )
     return header + "\n".join(events) + ("\n" if events else "")
+
+
+def hl_colour(opts: SpeechOptions) -> str:
+    return opts.highlight if opts.highlight.startswith("&H") else "&H0000FFFF"
+
+
+_TOKEN_RE = re.compile(r"[^a-z0-9']+")
+
+
+def _tokens(text: str) -> list[str]:
+    return [t for t in _TOKEN_RE.split(text.lower()) if t]
+
+
+def reaction_span(words: list[Word], reaction: str) -> tuple[float, float] | None:
+    """(start, end) of the first run of `words` that spells `reaction`; None when the model
+    did not quote the transcript faithfully (then nothing is featured)."""
+    want = _tokens(reaction)
+    if not want or not words:
+        return None
+    toks = [_tokens(w.text) for w in words]
+    flat: list[tuple[str, int]] = [(t, i) for i, ts in enumerate(toks) for t in ts]
+    n = len(want)
+    for k in range(len(flat) - n + 1):
+        if [t for t, _ in flat[k : k + n]] == want:
+            first, last = words[flat[k][1]], words[flat[k + n - 1][1]]
+            return first.start, max(last.end, first.start + 0.6) + 0.4
+    return None
 
 
 def write_ass(path: str | os.PathLike, text: str) -> Path:
