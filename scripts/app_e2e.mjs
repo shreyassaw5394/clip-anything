@@ -231,7 +231,7 @@ try {
   await page.click("#clear-inputs");
   await page.keyboard.press("Tab");
   const order = [];
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < 40; i++) {
     const id = await page.evaluate(() => { const a = document.activeElement; return a.id || a.name || a.className; });
     order.push(id);
     await page.keyboard.press("Tab");
