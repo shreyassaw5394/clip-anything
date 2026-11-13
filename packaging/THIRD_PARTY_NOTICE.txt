@@ -1,0 +1,17 @@
+Clip Anything desktop build - third-party software
+
+Clip Anything itself is MIT licensed (see LICENSE). Python packages inside this
+folder are listed with their licences in THIRD_PARTY_LICENSES.md.
+
+ffmpeg and ffprobe (folder "ffmpeg") are separate programs that Clip Anything
+starts as child processes; they are not linked into it. They are prebuilt
+binaries, used unmodified, licensed under the GNU GPL v2 or later (the builds
+enable libx264). The full licence text is in ffmpeg/LICENSE.txt. Source code and
+build scripts for the exact builds:
+  Windows: https://github.com/BtbN/FFmpeg-Builds (autobuild-2026-11-12-15-40, win64-gpl-shared)
+  macOS:   https://github.com/eugeneware/ffmpeg-static (b6.1.1; sources via https://ffmpeg.org)
+  ffmpeg source: https://ffmpeg.org/download.html
+Replacing the files in ffmpeg/ with any ffmpeg >= 5.0 build of your own works.
+
+Fonts, tcl/tk and the Python runtime are redistributed under their own
+permissive licences (PSF, Tcl/Tk BSD-style).

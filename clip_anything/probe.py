@@ -8,6 +8,7 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -116,7 +117,40 @@ def _popen_kwargs() -> dict:
     return kw
 
 
+def bundle_dirs() -> list[Path]:
+    """Where a packaged desktop build keeps its own ffmpeg/ffprobe: next to the executable
+    (PyInstaller one-folder, `_MEIPASS`), or the .app's Resources/Frameworks/MacOS folders.
+    `CLIP_ANYTHING_FFMPEG_DIR` adds one more folder first (also for tests)."""
+    dirs: list[Path] = []
+    env = os.environ.get("CLIP_ANYTHING_FFMPEG_DIR")
+    if env:
+        dirs.append(Path(env))
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        meipass = getattr(sys, "_MEIPASS", None)
+        dirs += [exe_dir, exe_dir / "ffmpeg"]
+        if meipass:  # PyInstaller one-folder: <app>/_internal (= Contents/Frameworks in .app)
+            dirs += [Path(meipass) / "ffmpeg", Path(meipass)]
+        if exe_dir.name == "MacOS" and exe_dir.parent.name == "Contents":  # .app bundle
+            contents = exe_dir.parent
+            res = contents / "Resources"
+            dirs += [res, contents / "Frameworks", res / "ffmpeg"]
+    return dirs
+
+
+def _bundled(name: str) -> str | None:
+    exe = name + (".exe" if os.name == "nt" else "")
+    for d in bundle_dirs():
+        cand = d / exe
+        if cand.is_file() and os.access(cand, os.X_OK):
+            return str(cand)
+    return None
+
+
 def _find(name: str) -> str | None:
+    bundled = _bundled(name)
+    if bundled:
+        return bundled
     found = shutil.which(name)
     if found:
         return found
@@ -159,14 +193,15 @@ def _full_build() -> tuple[str, str] | None:
 
 
 def preflight() -> FFmpegCaps:
-    """Locate ffmpeg/ffprobe, check version >= 5, detect the ass filter. When the PATH build
-    lacks libass but a keg-only ffmpeg-full exists, use that one."""
+    """Locate ffmpeg/ffprobe (a bundled copy first, then PATH), check version >= 5, detect
+    the ass filter. When the PATH build lacks libass but a keg-only ffmpeg-full exists, use
+    that one."""
     ffmpeg = _find("ffmpeg")
     ffprobe = _find("ffprobe")
     if not ffmpeg or not ffprobe:
         raise FFmpegMissing("ffmpeg/ffprobe not found on PATH", install_help())
     captions = _has_ass_filter(ffmpeg)
-    if not captions:
+    if not captions and _bundled("ffmpeg") is None:
         full = _full_build()
         if (
             full

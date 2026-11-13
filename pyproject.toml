@@ -38,6 +38,7 @@ dependencies = [
 [project.optional-dependencies]
 captions = ["faster-whisper>=1.1,<2"]
 dev = ["pytest>=8,<10", "ruff>=0.8,<1"]
+desktop = ["pyinstaller>=6.10,<7"]
 
 [project.urls]
 Homepage = "https://shipatmidnight.dev/clip-anything"
@@ -47,6 +48,7 @@ Issues = "https://github.com/shreyassaw5394/clip-anything/issues"
 
 [project.scripts]
 clip-anything = "clip_anything.cli:app"
+clip-anything-gui = "clip_anything.gui:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["clip_anything"]

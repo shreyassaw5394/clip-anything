@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -82,7 +84,7 @@ def print_summary(console: Console, report: Report) -> None:
     table.add_column("file")
     for c in report.clips:
         comps = " ".join(f"{k}={v:.2f}" for k, v in sorted(c.components.items()))
-        name = c.path.rsplit("/", 1)[-1] if c.path else f"({c.status})"
+        name = os.path.basename(c.path) if c.path else f"({c.status})"
         if c.status == "failed":
             name = f"[red]failed: {c.error}[/red]"
         table.add_row(

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -62,6 +63,41 @@ VARIANTS = [
     "ts",
     "truncated",
 ]
+
+
+# encoders a variant needs beyond libx264/aac (Windows/apt builds may lack some)
+ENCODERS = {
+    "hdr_hlg": ["libx265"],
+    "hdr_notag": ["libvpx-vp9", "libopus"],
+    "vp9_opus": ["libvpx-vp9", "libopus"],
+    "prores": ["prores_ks"],
+    "av1": ["libsvtav1"],
+}
+
+
+class EncoderMissing(RuntimeError):
+    """This ffmpeg build cannot make the variant; tests skip with the reason."""
+
+
+_ENCODERS: dict[str, set[str]] = {}
+
+
+def encoders(ffmpeg: str) -> set[str]:
+    if ffmpeg not in _ENCODERS:
+        out = subprocess.run(
+            [ffmpeg, "-hide_banner", "-encoders"], capture_output=True, text=True, check=False
+        ).stdout
+        _ENCODERS[ffmpeg] = {
+            m.group(1)
+            for m in re.finditer(r"^ [VAS][\w.]{5} (\S+)", out, re.M)
+            if m.group(1) != "="
+        }
+    return _ENCODERS[ffmpeg]
+
+
+def missing_encoders(ffmpeg: str, variant: str) -> list[str]:
+    have = encoders(ffmpeg)
+    return [e for e in ENCODERS.get(variant, []) if e not in have]
 
 
 def _ff(ffmpeg: str, *args: str) -> None:
@@ -127,6 +163,9 @@ def _simple(out: Path, ffmpeg: str, size: str, d: float, bursts: list[float], mo
 def build(root: Path, variant: str, ffmpeg: str) -> Path:
     d = root / "inputs"
     d.mkdir(parents=True, exist_ok=True)
+    lacking = missing_encoders(ffmpeg, variant)
+    if lacking:
+        raise EncoderMissing(f"{variant}: ffmpeg build lacks {', '.join(lacking)}")
     if variant == "short_clips":
         folder = d / "short_clips"
         folder.mkdir(exist_ok=True)
@@ -287,7 +326,8 @@ def ensure(root: Path, variant: str) -> Path:
     ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
     if not fresh:
         for v in VARIANTS:  # version bump: rebuild everything small
-            build(root, v, ffmpeg)
+            if not missing_encoders(ffmpeg, v):
+                build(root, v, ffmpeg)
         marker.write_text(json.dumps(truth(), indent=2))
         if out.exists():
             return out
@@ -306,7 +346,10 @@ def main(argv: list[str] | None = None) -> int:
     root = Path(args.out)
     variants = VARIANTS if args.variant == "all" else [args.variant]
     for v in variants:
-        print(build(root, v, ffmpeg))
+        try:
+            print(build(root, v, ffmpeg))
+        except EncoderMissing as exc:
+            print(f"skipped {exc}", file=sys.stderr)
     if args.variant == "all":
         (root / "inputs" / "inputs.json").write_text(json.dumps(truth(), indent=2))
     return 0

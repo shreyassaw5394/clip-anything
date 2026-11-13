@@ -316,8 +316,17 @@ def _speech_stage(
     for i, c in enumerate(cands, start=1):
         if cancel.is_set():
             break
-        pcm = clip_audio(info.path, caps, c.start, c.end - c.start, opts.analysis.sample_rate)
-        tr = transcribe(model, pcm, sp, opts.analysis.sample_rate)
+        try:
+            pcm = clip_audio(info.path, caps, c.start, c.end - c.start, opts.analysis.sample_rate)
+            tr = transcribe(model, pcm, sp, opts.analysis.sample_rate)
+        except Exception as exc:  # noqa: BLE001 - optional stage: never fail the run
+            reason = f"{type(exc).__name__}: {str(exc)[:160]}"
+            for done in cands:
+                done.components.pop("speech", None)
+            report.warnings.append(Warning("speech", "captions_off", f"captions skipped: {reason}"))
+            report.stages.append(Stage("speech", "failed", round(time.time() - t0, 3), reason))
+            emit(on_event, Event("speech", "skipped", message=reason))
+            return {}
         model_s += tr.model_s
         window = None
         if rms is not None:

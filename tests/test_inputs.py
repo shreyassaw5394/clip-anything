@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 import os
-import resource
 import subprocess
 import sys
 from pathlib import Path
@@ -19,9 +18,23 @@ from clip_anything.inputs import discover
 from clip_anything.pipeline import run
 from clip_anything.probe import preflight, probe
 
+try:
+    import resource  # POSIX only; used by the opt-in 3 h test
+except ImportError:  # pragma: no cover - Windows
+    resource = None
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
-from make_input_fixtures import ensure  # noqa: E402
+from make_input_fixtures import EncoderMissing  # noqa: E402
+from make_input_fixtures import ensure as _ensure  # noqa: E402
+
+
+def ensure(root, variant):
+    try:
+        return _ensure(root, variant)
+    except EncoderMissing as exc:
+        pytest.skip(str(exc))
+
 
 FIX = ROOT / "tests" / "fixtures"
 QUIET = {"speech": {"captions": False}}

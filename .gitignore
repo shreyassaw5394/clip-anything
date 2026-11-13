@@ -11,3 +11,5 @@ tests/fixtures/*.json
 .ruff_cache/
 tests/fixtures/inputs/
 .DS_Store
+build/
+packaging/ffmpeg/
