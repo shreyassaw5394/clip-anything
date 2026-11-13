@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -380,7 +381,12 @@ def _write_captions(report: Report, transcripts: dict, opts: Options, caps: FFmp
             continue
         name = clip_filename(stem, c.rank, c.start)
         text = build_ass(
-            tr.words, opts.speech, opts.render.width, opts.render.height, c.end - c.start
+            tr.words,
+            opts.speech,
+            opts.render.width,
+            opts.render.height,
+            c.end - c.start,
+            reaction=(c.ai or {}).get("reaction"),
         )
         c.captions_path = str(write_ass(out_dir / (name[:-4] + ".ass"), text))
         c.captions = True
@@ -403,9 +409,12 @@ def run(
     on_event: OnEvent | None = None,
     cancel: threading.Event | None = None,
     caps: FFmpegCaps | None = None,
+    rerank: Callable | None = None,
 ) -> Report:
     """Analyse `video`, pick clips and (unless dry_run) render them. Raises InputError,
-    FFmpegMissing or StageError; optional-stage problems become report.warnings."""
+    FFmpegMissing or StageError; optional-stage problems become report.warnings.
+    `rerank(cands, info, report, transcripts) -> cands` (e.g. `ai.Reranker`) sees the top 3N
+    candidates before render and may re-order them and attach `features["ai"]`."""
     opts = opts or Options()
     cancel = cancel or threading.Event()
     t_start = time.time()
@@ -465,7 +474,8 @@ def run(
     emit(on_event, Event("score", "start"))
     t0 = time.time()
     speech_on = (opts.speech.captions or opts.speech.rank) and info.has_audio
-    n_select = opts.clips.count * 3 if (speech_on and opts.speech.rank) else opts.clips.count
+    widen = (speech_on and opts.speech.rank) or rerank is not None
+    n_select = opts.clips.count * 3 if widen else opts.clips.count
     top, total, _sm = select_candidates(
         sig, opts.scoring, n_select, opts.clips.min_s, opts.clips.max_s
     )
@@ -474,8 +484,12 @@ def run(
     transcripts: dict = {}
     if speech_on and top:
         transcripts = _speech_stage(info, caps, opts, sig, top, report, on_event, cancel)
-        if transcripts:
+        if transcripts and rerank is None:
             top = sorted(top, key=lambda c: c.score, reverse=True)[: opts.clips.count]
+    if rerank is not None and top and not cancel.is_set():
+        if transcripts:
+            top = sorted(top, key=lambda c: c.score, reverse=True)
+        top = list(rerank(top, info, report, transcripts))[: opts.clips.count]
     facecam = None
     if opts.layout.facecam == "auto" and top and not opts.render.dry_run:
         facecam = _facecam_stage(info, caps, opts, report, on_event)
@@ -507,6 +521,10 @@ def run(
                 speech=c.features.get("speech", {})
                 if isinstance(c.features.get("speech"), dict)
                 else {},
+                title=(c.features.get("ai") or {}).get("title")
+                if isinstance(c.features.get("ai"), dict)
+                else None,
+                ai=c.features.get("ai") if isinstance(c.features.get("ai"), dict) else None,
             )
         )
     emit(on_event, Event("score", "done", message=f"{len(top)} clips from {total} candidates"))
@@ -887,6 +905,10 @@ def _run_many(
                 speech=c.features.get("speech", {})
                 if isinstance(c.features.get("speech"), dict)
                 else {},
+                title=(c.features.get("ai") or {}).get("title")
+                if isinstance(c.features.get("ai"), dict)
+                else None,
+                ai=c.features.get("ai") if isinstance(c.features.get("ai"), dict) else None,
             )
         )
     emit(on_event, Event("score", "done", message=f"{len(top)} clips from {total} candidates"))
