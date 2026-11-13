@@ -22,7 +22,7 @@ def pool(a: np.ndarray, m: int, how: str = "mean") -> list[float]:
     n = a.size
     edges = np.linspace(0, n, m + 1).astype(int)
     f = np.nanmax if how == "max" else np.nanmean
-    out = [float(f(a[lo:hi])) if hi > lo else 0.0 for lo, hi in zip(edges[:-1], edges[1:])]
+    out = [float(f(a[lo:hi])) if hi > lo else 0.0 for lo, hi in zip(edges[:-1], edges[1:], strict=True)]
     return [round(x, 4) for x in out]
 
 
