@@ -8,6 +8,11 @@ All notable changes to Clip Anything. Dates are the day the change landed.
 - `clip-anything app` opens it from the CLI; `clip-anything-gui` still works
 - Pipeline progress events carry a live audio level and the final score curve with the picked spans
 
+## 0.3.0 — 2026-11-13
+
+- New app for Windows and Mac: drop a recording or a folder, see the action curve draw live, play and scrub the clips, copy post text, re-run with different settings in seconds; a Setup screen with one-click installs
+- `clip-anything app` opens it; `clip-anything-gui` still works
+
 ## 0.2.0 — 2026-11-13
 
 - Desktop app for Windows and Mac (download, open, drop a recording in); Windows supported and tested in CI
