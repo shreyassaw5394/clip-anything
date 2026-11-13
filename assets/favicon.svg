@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Clip Anything">
+<title>Clip Anything</title>
+<rect width="32" height="32" rx="7" fill="#111318"/>
+<rect x="3" y="21" width="2.5" height="5" rx=".6" fill="#f1efe9" opacity=".6"/>
+<rect x="7" y="18" width="2.5" height="8" rx=".6" fill="#f1efe9" opacity=".6"/>
+<rect x="22" y="19" width="2.5" height="7" rx=".6" fill="#f1efe9" opacity=".6"/>
+<rect x="26" y="22" width="2.5" height="4" rx=".6" fill="#f1efe9" opacity=".6"/>
+<rect x="11.5" y="5" width="9" height="16" rx="1.5" fill="#c4105f"/>
+<rect x="14.75" y="7.5" width="2.5" height="11" rx=".6" fill="#f1efe9"/>
+</svg>
