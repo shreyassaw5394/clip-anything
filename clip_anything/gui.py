@@ -161,6 +161,51 @@ def friendly_error(exc: BaseException) -> str:
     return f"Unexpected problem: {type(exc).__name__}: {text}"
 
 
+def is_expected_error(exc: BaseException) -> bool:
+    """Errors with a plain-language explanation of their own (bad input, no ffmpeg, a stage
+    that reported why, a read-only folder). Everything else is a crash worth a log file."""
+    from .errors import FFmpegMissing, InputError, StageError
+
+    return isinstance(exc, (FFmpegMissing, InputError, StageError, PermissionError))
+
+
+def record_failure(
+    exc: BaseException, *, inputs: list[str], options: dict | None, source: str
+) -> tuple[str, str]:
+    """(banner text, crash log path or ""). Every failed run gets a log with the full
+    traceback; the banner for an unexpected error points at it instead of showing internals."""
+    from .crashlog import error_summary, write_crash_log
+
+    log = write_crash_log(exc, inputs=inputs, options=options, source=source)
+    if is_expected_error(exc):
+        return friendly_error(exc), str(log) if log else ""
+    return error_summary(exc, log), str(log) if log else ""
+
+
+def open_log(path: str | os.PathLike) -> None:
+    """Show the crash log: reveal it in the file manager (its folder, elsewhere)."""
+    p = Path(path)
+    if sys.platform == "darwin":
+        quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+        subprocess.Popen(["open", "-R", str(p)], **quiet)
+    elif sys.platform == "win32":
+        subprocess.Popen(["explorer", f"/select,{p}"])  # noqa: S607
+    else:
+        open_folder(p.parent)
+
+
+def startup_notice() -> str:
+    """One-time notice for the packaged app when it runs from a place it should not (disk
+    image, App Translocation, read-only volume); "" otherwise. Shown before a run, never
+    mid-run: the UI reads it from /api/caps, the browser mode prints it."""
+    from .crashlog import bundle_location_problem
+
+    try:
+        return bundle_location_problem() or ""
+    except Exception:  # noqa: BLE001 - a check must never stop the app from starting
+        return ""
+
+
 def clip_rows(report) -> list[tuple[str, str, str, str]]:
     """(rank, time, score, file-or-status) rows for the finished list."""
     rows = []
@@ -189,7 +234,7 @@ def default_runner(target, opts, on_event, cancel):
 
 
 Message = tuple[str, object]  # ("progress", Progress) | ("warn", str) | ("done", Report)
-#                              | ("error", str) | ("cancelled", None)
+#                              | ("error", str) | ("log", str) | ("cancelled", None)
 
 
 class Controller:
@@ -202,6 +247,8 @@ class Controller:
         self.thread: threading.Thread | None = None
         self.model = ProgressModel()
         self.report = None
+        self.inputs: list[str] = []
+        self.crash_log = ""
 
     @property
     def running(self) -> bool:
@@ -221,6 +268,8 @@ class Controller:
         self.cancel_event = threading.Event()
         self.model = ProgressModel()
         self.report = None
+        self.inputs = list(settings.inputs)
+        self.crash_log = ""
         self.thread = threading.Thread(
             target=self._work, args=(target, opts), name="clip-anything-job", daemon=True
         )
@@ -234,7 +283,12 @@ class Controller:
             if self.cancel_event.is_set():
                 self.queue.put(("cancelled", None))
             else:
-                self.queue.put(("error", friendly_error(exc)))
+                text, self.crash_log = record_failure(
+                    exc, inputs=self.inputs, options=_options_dict(opts), source="gui"
+                )
+                if self.crash_log:
+                    self.queue.put(("log", self.crash_log))
+                self.queue.put(("error", text))
             return
         self.report = report
         self.queue.put(("cancelled", None) if self.cancel_event.is_set() else ("done", report))
@@ -254,6 +308,13 @@ class Controller:
                 out.append(self.queue.get_nowait())
             except queue.Empty:
                 return out
+
+
+def _options_dict(opts) -> dict | None:
+    try:
+        return opts.to_dict()
+    except Exception:  # noqa: BLE001 - the log is best effort
+        return None
 
 
 # --- entry points -------------------------------------------------------------------------
@@ -311,6 +372,8 @@ def headless(inputs: list[str], out_dir: str, count: int, captions: bool = False
                 print(f"{payload.fraction * 100:3.0f}%  {payload.label}")
             elif kind == "warn":
                 print(f"note: {payload}")
+            elif kind == "log":
+                print(f"log: {payload}")
             elif kind == "error":
                 print(f"error: {payload}")
                 return 1
@@ -352,6 +415,9 @@ def main(argv: list[str] | None = None) -> int:
         return headless([video] if video else [], out, count, captions="--captions" in argv)
     from .app.launch import launch
 
+    notice = startup_notice()
+    if notice:
+        print(notice, flush=True)
     window = "browser" if "--browser" in argv else ("webview" if "--window" in argv else "auto")
     return launch(
         window=window, port=int(_opt("--port", "0") or 0), open_ui="--no-open" not in argv

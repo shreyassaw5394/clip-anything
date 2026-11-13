@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from ..events import Event
-from ..gui import STAGE_LABELS, ProgressModel, captions_available, friendly_error
+from ..gui import STAGE_LABELS, ProgressModel, captions_available, record_failure
 
 LENGTHS = {"short": (15.0, 30.0), "normal": (15.0, 45.0), "long": (30.0, 60.0)}
 BARS = {"normal": None, "low": 0.3}  # action bar: None keeps the ScoringOptions default
@@ -131,6 +131,7 @@ class Job:
         self.model = ProgressModel()
         self.report = None
         self.error = ""
+        self.log = ""  # crash log path when the run failed
         self.warnings: list[str] = []
         self.disclosure = ""
         self.ai_cloud = False
@@ -161,10 +162,10 @@ class Job:
     def _work(self) -> None:
         req = self.request
         target = req.inputs[0] if len(req.inputs) == 1 else list(req.inputs)
+        opts = None
         try:
-            report = self.runner(
-                target, req.options(), self._on_event, self.cancel_event, self._reranker
-            )
+            opts = req.options()
+            report = self.runner(target, opts, self._on_event, self.cancel_event, self._reranker)
             if self._reranker is not None:
                 from ..ai import finish_report
 
@@ -175,7 +176,9 @@ class Job:
             if self.cancel_event.is_set():
                 self._finish("cancelled")
             else:
-                self.error = friendly_error(exc)
+                self.error, self.log = record_failure(
+                    exc, inputs=req.inputs, options=_options_dict(opts), source="app"
+                )
                 self._finish("error")
             return
         self.report = report
@@ -184,7 +187,7 @@ class Job:
     def _finish(self, state: str) -> None:
         self.finished = time.time()
         self.state = state
-        self._push({"kind": "finished", "state": state, "error": self.error})
+        self._push({"kind": "finished", "state": state, "error": self.error, "log": self.log})
 
     def _on_event(self, ev: Event) -> None:
         p = self.model.update(ev)
@@ -243,6 +246,7 @@ class Job:
             "elapsed": round((self.finished or time.time()) - self.created, 1),
             "warnings": self.warnings,
             "error": self.error,
+            "log": self.log,
             "disclosure": self.disclosure,
             "ai_cloud": self.ai_cloud,
             "seq": len(self.events),
@@ -297,6 +301,13 @@ class Job:
             "cached": any(s.status == "cached" for s in r.stages),
             "bar": self.request.bar,
         }
+
+
+def _options_dict(opts) -> dict | None:
+    try:
+        return opts.to_dict() if opts is not None else None
+    except Exception:  # noqa: BLE001 - the log is best effort
+        return None
 
 
 def why_line(clip) -> str:
