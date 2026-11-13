@@ -22,6 +22,9 @@ datas = [
     (str(ROOT / "THIRD_PARTY_LICENSES.md"), "."),
     (str(ROOT / "packaging" / "THIRD_PARTY_NOTICE.txt"), "."),
 ]
+for f in sorted((ROOT / "packaging" / "licences").glob("*")):
+    if f.is_file():
+        datas.append((str(f), "ffmpeg"))  # GPL/LGPL texts for the bundled ffmpeg
 if FF.is_dir():
     for f in sorted(FF.iterdir()):
         if f.name.startswith("LICENSE"):
@@ -99,6 +102,6 @@ if sys.platform == "darwin":
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "12.0",
             "CFBundleShortVersionString": os.environ.get("CLIP_ANYTHING_VERSION", "0.1.0"),
-            "NSHumanReadableCopyright": "MIT. ffmpeg (GPL) ships as a separate program.",
+            "NSHumanReadableCopyright": "MIT. ffmpeg (GPL v3) ships as a separate program; see THIRD_PARTY_NOTICE.txt.",
         },
     )

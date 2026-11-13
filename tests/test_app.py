@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import re
 import socket
 import time
 from pathlib import Path
@@ -317,6 +318,21 @@ def test_request_parsing_and_why_line():
     c.components = {}
     c.speech = {}
     assert why_line(c) == "Above the action bar"
+
+
+def test_about_screen_and_first_run_line(server):
+    """The page carries the About screen, the one-time privacy line and only safe outbound links."""
+    s, _, _ = server
+    res, body = _req(s, "GET", "/")
+    assert res.status == 200
+    html = body.decode()
+    assert 'id="screen-about"' in html and 'id="about"' in html
+    assert "Everything stays on this computer unless you turn on cloud AI" in html
+    assert "docs/privacy.md" in html and "docs/terms.md" in html and "SHA256SUMS.txt" in html
+    for href in re.findall(r'href="([^"]+)"', html):
+        assert href.startswith(("https://", "mailto:", "/static/", "#")), href
+    res, body = _req(s, "GET", "/static/app.js", token=False)
+    assert b'"about"' in body and b"about-version" in body
 
 
 def test_inspect_prefs_and_bar(server, monkeypatch):

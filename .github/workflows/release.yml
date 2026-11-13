@@ -96,9 +96,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
+          NOTES: |
+            **Unsigned builds.** macOS and Windows warn once ("Apple could not verify" / "Windows protected your PC"): the publisher is unknown to the OS, nothing was found. Check your download against `SHA256SUMS.txt` below, then follow the open-anyway steps in [docs/desktop.md](https://github.com/shreyassaw5394/clip-anything/blob/main/docs/desktop.md).
+
+            **Privacy.** Everything stays on your computer unless you turn on captions (one-time model download, asks first) or cloud AI with your own key. No account, no telemetry. Details: [docs/privacy.md](https://github.com/shreyassaw5394/clip-anything/blob/main/docs/privacy.md). The app bundles ffmpeg (GPL v3) as a separate program; licences are in `THIRD_PARTY_NOTICE.txt` inside the app.
         run: |
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "$TAG" \
-              --notes "Desktop builds are unsigned: see docs/desktop.md for the open-anyway steps."
+              --notes "$NOTES"
           fi
           gh release upload "$TAG" artifacts/* --repo "$GITHUB_REPOSITORY" --clobber

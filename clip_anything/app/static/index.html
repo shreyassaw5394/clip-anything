@@ -47,6 +47,7 @@
       <li class="hint"><span class="hint-n" aria-hidden="true">1</span><span><b>Drop</b> a recording or a folder of them.</span></li>
       <li class="hint"><span class="hint-n" aria-hidden="true">2</span><span><b>Make clips</b> and watch it pick the action.</span></li>
       <li class="hint"><span class="hint-n" aria-hidden="true">3</span><span><b>Post</b> the vertical clips it hands you, with the text.</span></li>
+      <li class="hint hint-local" id="hint-local"><span>Everything stays on this computer unless you turn on cloud AI. <button type="button" class="link" id="hint-about">How</button></span></li>
       <li class="hint hint-x"><button type="button" class="link" id="hints-dismiss">Got it</button></li>
     </ol>
 
@@ -182,6 +183,44 @@
     <div class="problem" id="setup-problem" role="alert"></div>
   </section>
 
+  <!-- About -->
+  <section class="screen about" id="screen-about" aria-labelledby="h-about" hidden>
+    <h1 class="title title-sm" id="h-about">About Clip Anything</h1>
+    <p class="lead" id="about-version">Version —</p>
+    <div class="about-cols">
+      <div>
+        <h2 class="about-h">Privacy and safety</h2>
+        <ul class="about-list">
+          <li>Nothing leaves this computer by default: no account, no upload, no telemetry. The recording, clips, <code>report.json</code> and the <code>.clipanything</code> analysis cache stay on your disk.</li>
+          <li>The only network use is what you turn on: the one-time captions model download from Hugging Face (asks first), a local Ollama model on 127.0.0.1, or a cloud AI provider (OpenAI or Anthropic) that receives small frames and caption text only when you set your own key. Set up installs ffmpeg and friends only after you say yes to each command.</li>
+          <li>This window is served from 127.0.0.1 with a token that changes every launch. The desktop app is not signed yet, so macOS and Windows warn once; check the download against <code>SHA256SUMS.txt</code> on the release page.</li>
+          <li>Clip choices, captions, titles and hooks are automated and labelled; they can be wrong. You are responsible for the rights to what you process and post: game video policies, music in the stream, other people's voice or likeness.</li>
+          <li>Recent runs and window size live in a <code>clip-anything</code> folder in your user data (Forget all clears recent runs); the first-run hint is remembered in this page's local storage.</li>
+        </ul>
+        <p class="about-links">
+          <a href="https://github.com/shreyassaw5394/clip-anything/blob/main/docs/privacy.md" rel="noopener noreferrer" target="_blank">Privacy</a>
+          <a href="https://github.com/shreyassaw5394/clip-anything/blob/main/docs/terms.md" rel="noopener noreferrer" target="_blank">Terms</a>
+          <a href="https://github.com/shreyassaw5394/clip-anything/blob/main/docs/desktop.md" rel="noopener noreferrer" target="_blank">Unsigned-app notes</a>
+          <a href="https://github.com/shreyassaw5394/clip-anything/blob/main/SECURITY.md" rel="noopener noreferrer" target="_blank">Report a security problem</a>
+        </p>
+      </div>
+      <div>
+        <h2 class="about-h">Licences</h2>
+        <p>Clip Anything is a free, non-commercial passion project by an independent developer, part of Ship at Midnight. MIT licence; provided as is, without warranty, liability limited to the extent the law allows. Game, console and platform names describe what a recording contains; they belong to their owners and nothing here is affiliated with them.</p>
+        <p>ffmpeg (GPL v3) runs as a separate program; its licence texts are in the app's <code>ffmpeg</code> folder. Python packages and their licences: <code>THIRD_PARTY_LICENSES.md</code>. Fonts: Barlow, SIL Open Font License.</p>
+        <p class="about-links">
+          <a href="https://github.com/shreyassaw5394/clip-anything/blob/main/LICENSE" rel="noopener noreferrer" target="_blank">MIT licence</a>
+          <a href="https://github.com/shreyassaw5394/clip-anything/blob/main/NOTICE" rel="noopener noreferrer" target="_blank">Notices</a>
+          <a href="https://github.com/shreyassaw5394/clip-anything/blob/main/THIRD_PARTY_LICENSES.md" rel="noopener noreferrer" target="_blank">Third-party licences</a>
+        </p>
+        <h2 class="about-h">Want a hosted version?</h2>
+        <p>Drag a recording into a web page instead of installing anything. Whether it gets built depends on you: <a href="https://github.com/shreyassaw5394/shipatmidnight-ideas/issues/7" rel="noopener noreferrer" target="_blank">upvote the idea</a>.</p>
+        <p class="note">Need help or have an idea? <a href="https://discord.gg/s8wj7tBAM" rel="noopener noreferrer" target="_blank">Discord</a>, <a href="mailto:shreyassaw@gmail.com">email</a>, or <a href="https://github.com/shreyassaw5394/shipatmidnight-ideas/issues/7" rel="noopener noreferrer" target="_blank">upvote the hosted version</a>.</p>
+      </div>
+    </div>
+    <div class="results-actions"><button type="button" class="btn" id="about-back">Back</button></div>
+  </section>
+
   <!-- Error screen -->
   <section class="screen" id="screen-error" aria-labelledby="h-error" hidden>
     <h1 class="title title-sm" id="h-error">That did not work</h1>
@@ -192,10 +231,11 @@
 </main>
 
 <footer class="foot">
-  <p>Everything stays on this computer. No account, no upload, no telemetry.</p>
+  <p>Everything stays on this computer. No account, no upload, no telemetry. <button type="button" class="link" id="about">About</button></p>
   <p class="foot-links">Tell us how it went:
-    <a href="https://github.com/shreyassaw5394/clip-anything/issues/new?template=tried-it.md" rel="noopener noreferrer" target="_blank">Tried it</a>
     <a href="https://discord.gg/s8wj7tBAM" rel="noopener noreferrer" target="_blank">Discord</a>
+    <a href="mailto:shreyassaw@gmail.com">Email</a>
+    <a href="https://github.com/shreyassaw5394/clip-anything/issues/new?template=tried-it.md" rel="noopener noreferrer" target="_blank">Tried it</a>
     <span class="version" id="version"></span>
     <button type="button" class="link" id="quit" hidden>Quit</button>
   </p>
