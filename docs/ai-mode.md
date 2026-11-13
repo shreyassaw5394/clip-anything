@@ -35,6 +35,25 @@ one warning (the same behaviour as the older `--vision` flag, which still works)
 
 Multi-file sessions (a folder of short clips) are ranked action-only in this version.
 
+## Tell it what you are looking for
+
+```bash
+clip-anything gameplay.mp4 --ai --ai-brief "funny fails and my reactions"
+```
+
+The brief goes into every prompt. The model rates each candidate twice: how clip-worthy it is,
+and how well it **matches** the brief (1–10), with one line saying what matched. With a brief the
+tool looks further down the action order (5N candidates instead of 3N, at most 40) and the final
+score is 0.6 action + 0.4 AI, where the AI part is the mean of the two ratings (match alone for a
+text-only model). Each clip gets `ai.match`, `ai.matches` ("Matches: he trips on the ledge") in
+`report.json`, in the `<clip>.txt` sidecar and on the app's clip card; the run's brief is stored as
+`ai.brief` at the top of the report. An empty brief is the plain `--ai` behaviour. The brief is
+bounded to 300 characters and is quoted to the model as data, not instructions.
+
+In the app the same box sits under "What are you looking for?"; it needs the AI toggle on. The
+chips next to it (Fights, Funny, Big plays, Crashes, Calm but tense) are `--preset` weight sets and
+work without AI.
+
 ## Providers and what leaves your machine
 
 | `--ai-provider` | What is sent | Where | Cost |

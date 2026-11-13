@@ -147,6 +147,7 @@ The full list of flags is in [docs/reference.md](docs/reference.md#all-options).
 - Facecam stack: a webcam in a corner is detected and placed above the gameplay
 - The 9:16 crop follows the action instead of staying centred
 - A `report.json` next to the clips with the time, score and reason for each one
+- Tell it what you're looking for: `--preset shooter|racing|sports|horror|story|funny` (or the chips in the app) leans the picks without AI; with `--ai`, `--ai-brief "funny fails"` scores every moment on how well it matches and says what matched
 
 Want AI titles and smarter picks? Run `clip-anything setup`, then add `--ai`. Local Ollama by default, or your own OpenAI/Anthropic key; see [docs/ai-mode.md](docs/ai-mode.md).
 
