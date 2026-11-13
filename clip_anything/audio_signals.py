@@ -5,6 +5,15 @@ Raw signals (normalisation is scoring's job):
   audio.flux     max spectral flux (onset strength) inside the window
   audio.onset    same as flux but half-wave rectified against the previous window (sharpness)
   audio.loud_rel rms_db minus rolling 60 s median (dB above the local baseline), computed at the end
+  audio.centroid spectral centroid (Hz) of the window, energy-weighted over its STFT frames
+  audio.flat     spectral flatness (0 tone .. 1 noise) at the frame with the strongest flux
+  audio.mod      share of the frame-energy envelope's AC power between 3 and 8 Hz (laughter
+                 syllable rate; automatic fire sits above 10 Hz, music swells below 2 Hz)
+  audio.voice_react laughter / shout 0..1 (finalize): loud over the baseline, centroid in the
+                 voice band, voiced (low flatness) and either modulated like laughter or
+                 sustained like a shout. Cheap and approximate; a bonus, never a gate.
+  audio.stinger  tonal onset 0..1 (finalize): a level jump with a near-tonal spectrum (a music
+                 hit, a level-up chime), not broadband noise (shots, impacts)
 """
 
 from __future__ import annotations
@@ -14,7 +23,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-EXTRACTOR_VERSION = 1
+EXTRACTOR_VERSION = 2
 N_FFT = 1024
 HOP = 256
 
@@ -50,6 +59,10 @@ class AudioExtractor:
         self.rms_db: list[float] = []
         self.flux: list[float] = []
         self.onset: list[float] = []
+        self.centroid: list[float] = []
+        self.flat: list[float] = []
+        self.mod: list[float] = []
+        self._freqs = np.fft.rfftfreq(N_FFT, 1.0 / sample_rate).astype(np.float32)
         self._prev_flux = 0.0
         self._hops_done = 0
 
@@ -106,6 +119,27 @@ class AudioExtractor:
         self.onset.append(max(0.0, f - self._prev_flux))
         self._prev_flux = f
         self._prev_mag = mag[-1:]
+        self._emit_timbre(mag, flux_frames)
+
+    def _emit_timbre(self, mag: np.ndarray, flux_frames: np.ndarray) -> None:
+        """Centroid / flatness / 3-8 Hz envelope modulation of one hop from its log-magnitude
+        frames (frame rate sample_rate / HOP = 62.5 Hz)."""
+        lin = np.expm1(mag) * 0.1  # back to linear magnitude
+        energy = lin.sum(axis=1) + 1e-9
+        cen = float(((lin @ self._freqs) / energy * energy).sum() / energy.sum())
+        self.centroid.append(cen)
+        k = int(np.argmax(flux_frames)) if flux_frames.size else 0
+        spec = lin[min(k, lin.shape[0] - 1)][1:] + 1e-9
+        self.flat.append(float(np.exp(np.mean(np.log(spec))) / np.mean(spec)))
+        env = energy - energy.mean()
+        if env.size >= 8 and float(np.abs(env).max()) > 0:
+            spec_env = np.abs(np.fft.rfft(env * np.hanning(env.size))) ** 2
+            fr = np.fft.rfftfreq(env.size, HOP / self.sr)
+            ac = spec_env[1:].sum() + 1e-12
+            band = spec_env[(fr >= 3.0) & (fr <= 8.0)].sum()
+            self.mod.append(float(band / ac))
+        else:
+            self.mod.append(0.0)
 
     def result(self, duration_s: float) -> dict[str, np.ndarray]:
         n = len(self.rms_db)
@@ -113,6 +147,9 @@ class AudioExtractor:
             "audio.rms_db": np.asarray(self.rms_db, dtype=np.float32),
             "audio.flux": np.asarray(self.flux[:n], dtype=np.float32),
             "audio.onset": np.asarray(self.onset[:n], dtype=np.float32),
+            "audio.centroid": np.asarray(self.centroid[:n], dtype=np.float32),
+            "audio.flat": np.asarray(self.flat[:n], dtype=np.float32),
+            "audio.mod": np.asarray(self.mod[:n], dtype=np.float32),
         }
 
 
@@ -123,14 +160,59 @@ def rolling_median(x: np.ndarray, size: int) -> np.ndarray:
     return median_filter(x, size=size, mode="nearest")
 
 
+def _ramp(x: np.ndarray, lo: float, hi: float) -> np.ndarray:
+    return np.clip((x - lo) / max(hi - lo, 1e-9), 0.0, 1.0)
+
+
+# voice band for laughter / shouts (centroid, Hz): full weight inside, fading to 0 outside
+VOICE_BAND = (300.0, 700.0, 2200.0, 3400.0)
+
+
+def voice_react(
+    loud_rel: np.ndarray, centroid: np.ndarray, flat: np.ndarray, mod: np.ndarray
+) -> np.ndarray:
+    """Laughter / shout 0..1 per window from the raw timbre signals.
+    laugh = clearly over the baseline x voiced x 3-8 Hz envelope modulation
+    shout = well over the baseline x voiced, sustained for two windows
+    Gunfire is broadband (flatness high, centroid high) and auto fire modulates above 10 Hz;
+    music swells are tonal but barely modulated and rarely in the band for long."""
+    lo, a, b, hi = VOICE_BAND
+    band = np.minimum(_ramp(centroid, lo, a), 1.0 - _ramp(centroid, b, hi))
+    # voiced = harmonic but rough (0.1-0.3); a pure tone or chord (< 0.05) is music, not a voice
+    voiced = _ramp(flat, 0.04, 0.1) * (1.0 - _ramp(flat, 0.25, 0.55))
+    laugh = _ramp(loud_rel, 3.0, 10.0) * _ramp(mod, 0.3, 0.6)
+    shout = _ramp(loud_rel, 6.0, 14.0)
+    if shout.size > 1:  # sustained: both this window and a neighbour
+        shout = np.maximum(
+            np.minimum(shout, np.concatenate([shout[1:], shout[-1:]])),
+            np.minimum(shout, np.concatenate([shout[:1], shout[:-1]])),
+        )
+    return np.clip(band * voiced * np.maximum(laugh, shout), 0.0, 1.0).astype(np.float32)
+
+
+def stinger(rms_db: np.ndarray, flat: np.ndarray) -> np.ndarray:
+    """Tonal onset 0..1: a level jump of 6-15 dB on one window whose spectrum is near-tonal
+    (spectral flux hardly moves for a clean chord, so the jump is read from the level)."""
+    jump = np.diff(rms_db, prepend=rms_db[:1])
+    # the 1 s level window sees the jump one hop before the hop whose spectrum is the hit
+    flat_now = np.minimum(flat, np.concatenate([flat[1:], flat[-1:]])) if flat.size > 1 else flat
+    return (_ramp(jump, 6.0, 15.0) * (1.0 - _ramp(flat_now, 0.08, 0.25))).astype(np.float32)
+
+
 def finalize(arrays: dict[str, np.ndarray], hop_s: float, baseline_s: float) -> None:
-    """Add audio.loud_rel = rms_db - rolling median (dB over local baseline)."""
+    """Add audio.loud_rel = rms_db - rolling median (dB over local baseline), then the
+    derived audio.voice_react and audio.stinger when the timbre signals are present."""
     rms = arrays["audio.rms_db"].astype(np.float32)
     if rms.size == 0:
         arrays["audio.loud_rel"] = rms.copy()
         return
     base = rolling_median(rms, int(baseline_s / hop_s))
     arrays["audio.loud_rel"] = (rms - base).astype(np.float32)
+    n = rms.size
+    cen, flat, mod = (arrays.get(k) for k in ("audio.centroid", "audio.flat", "audio.mod"))
+    if cen is not None and flat is not None and mod is not None and cen.size == n:
+        arrays["audio.voice_react"] = voice_react(arrays["audio.loud_rel"], cen, flat, mod)
+        arrays["audio.stinger"] = stinger(rms, flat)
 
 
 def extract_audio(

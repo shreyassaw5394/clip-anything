@@ -122,6 +122,19 @@ main:focus{outline:0}
 .count-row{display:flex;align-items:center;gap:16px}
 input[type=range]{flex:1;accent-color:var(--ink);height:28px;margin:0;cursor:pointer}
 .count-out{font-family:var(--display);font-weight:700;font-size:48px;line-height:1;min-width:2ch;text-align:right;font-variant-numeric:tabular-nums}
+.field-look{grid-column:1/-1;padding:20px 0 24px;border-top:1px solid var(--rule)}
+.field + .field-look{padding-left:0;border-left:0}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font:inherit;font-weight:500;font-size:14px;line-height:1;padding:9px 14px;border:1.5px solid var(--ink);border-radius:999px;background:transparent;color:var(--ink);cursor:pointer;transition:background var(--t) var(--ease),color var(--t) var(--ease)}
+.chip:hover{background:var(--paper-2)}
+.chip[aria-pressed=true]{background:var(--ink);color:var(--paper)}
+.chip:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.brief-label{display:block;font-size:14px;color:var(--ink-2);margin:16px 0 6px}
+textarea#brief{display:block;width:100%;max-width:62ch;box-sizing:border-box;font:inherit;font-size:15px;line-height:1.4;padding:10px 12px;border:1.5px solid var(--ink);border-radius:0;background:var(--paper);color:var(--ink);resize:vertical;min-height:52px}
+textarea#brief:disabled{border-color:var(--rule);color:var(--muted);background:var(--paper-2);cursor:not-allowed}
+textarea#brief:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.card-match{margin:2px 0 0;font-size:14px;line-height:1.35;color:var(--ink-2)}
+.card-match:empty{display:none}
 .field-bar{margin:16px 0 0;padding:0;border:0}
 .field-bar legend{font-size:14px;color:var(--ink-2);padding:0;margin-bottom:8px}
 .seg{display:grid;grid-template-columns:repeat(3,1fr);border:1.5px solid var(--ink)}

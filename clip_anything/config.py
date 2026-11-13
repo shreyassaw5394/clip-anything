@@ -92,6 +92,67 @@ class ScoringOptions:
     visual_s: float = 3.0  # motion evidence = mean over +- this many seconds (must persist)
     zero_start_ratio: float = 2.0  # a clip starting at 0:00 needs 2x the median top score
     zero_start_peak_s: float = 10.0  # ...when its peak is inside the first 10 s (an intro)
+    # extra signals (10-01): multiplicative bonuses, score *= 1 + sum(w * signal); a signal
+    # on its own never makes a clip (score 0 stays 0) and the action bar still applies.
+    # Default 0: on three labelled recordings (FPS match, RPG, 6 h campaign) none of them
+    # changed a top-10 pick, and voice_react fires on cutscene dialogue as much as on a
+    # shout. Presets turn them on; the report and the reason line always show them.
+    w_voice: float = 0.0  # a voice reaction on the mic or mix (audio.voice_react)
+    w_fade: float = 0.0  # a fade to black within fade_look_s after the moment (something ended)
+    w_stinger: float = 0.0  # tonal music hit (audio.stinger); cutscene music fires it too
+    fade_look_s: float = 8.0
+    # streak merge: bursts within streak_gap_s of a peak and at least streak_frac of its height
+    # become one clip; three or more that do not fit may stretch it to streak_max_s (> --max)
+    streak_gap_s: float = 25.0
+    streak_frac: float = 0.6
+    streak_max_s: float = 60.0
+    preset: str = ""  # name of the --preset applied (recorded in report.json)
+
+
+# --preset / app chips: weight sets over the defaults (file < preset < CLI). Game-agnostic:
+# each names what the moments look like, not a title.
+PRESETS: dict[str, dict] = {
+    "shooter": {"w_onset": 1.0, "w_motion": 0.8},
+    "racing": {"w_motion": 1.1, "w_loud": 0.9, "w_cut": 0.1, "ref_motion": 20.0},
+    "sports": {"w_loud": 1.2, "w_fade": 0.1, "lead_frac": 0.65},
+    # calm but tense: a long low-level build-up then a burst -> longer pre-roll, lower onset bar
+    "horror": {
+        "lead_frac": 0.75,
+        "min_evidence": 0.4,
+        "ref_onset": (0.15, 0.5),
+        "w_loud": 1.2,
+        "w_motion": 0.5,
+        "w_voice": 0.2,
+        "smooth_sigma_s": 1.0,
+    },
+    "story": {
+        "w_speech": 0.6,
+        "w_stinger": 0.2,
+        "w_fade": 0.2,
+        "w_motion": 0.5,
+        "w_card": 0.5,
+        "min_evidence": 0.35,
+    },
+    "funny": {"w_voice": 0.4, "w_speech": 0.5, "min_evidence": 0.4},
+}
+# the app's chips, in display order -> preset
+PRESET_CHIPS: dict[str, str] = {
+    "Fights": "shooter",
+    "Funny": "funny",
+    "Big plays": "sports",
+    "Crashes": "racing",
+    "Calm but tense": "horror",
+}
+
+
+def preset_layer(name: str | None) -> dict[str, Any]:
+    """Config layer for a preset name ('' / None = nothing). Unknown names raise InputError."""
+    if not name:
+        return {}
+    key = name.strip().lower()
+    if key not in PRESETS:
+        raise InputError(f"unknown preset {name!r} (use {', '.join(PRESETS)})")
+    return {"scoring": {**copy.deepcopy(PRESETS[key]), "preset": key}}
 
 
 @dataclass
