@@ -66,7 +66,7 @@ const idx = (sec) => Math.round(clamp(sec / dur) * (N - 1));
 // local maxima for the sound spikes
 const peaks = (arr, thr, gap) => { const p = []; for (let i = 1; i < N - 1; i++) if (arr[i] >= thr && arr[i] >= arr[i - 1] && arr[i] >= arr[i + 1] && (!p.length || i - p[p.length - 1] > gap)) p.push(i); return p; };
 const soundPeaks = peaks(D.audio, 0.5, 4).sort((a, b) => D.audio[b] - D.audio[a]).slice(0, 14).sort((a, b) => a - b);
-const clips = D.clips.map((c) => { const a = idx(c.start), b = idx(c.end); let m = a, v = -1; for (let i = a; i <= b; i++) if (D.score[i] > v) { v = D.score[i]; m = i; } return { ...c, i: m, v }; }).sort((a, b) => a.i - b.i);
+const clips = D.clips.map((c) => { const a = idx(c.start), b = idx(c.end); let m = a, v = -1; for (let i = a; i <= b; i++) if (D.evidence[i] > v) { v = D.evidence[i]; m = i; } return { ...c, i: m, v }; }).sort((a, b) => a.i - b.i);
 const bumpI = D.bump ? idx(D.bump.t) : -1;
 const bar = D.bar;
 
@@ -141,23 +141,23 @@ window.render = function (t) {
     const glow = seg(t, B.both + 1.6, 1.0);
     baseline(base, a);
     // magenta fill where sound and motion rise together
-    if (glow > 0) { ctx.save(); ga(a * glow * .85); ctx.fillStyle = ACC; for (let i = 0; i < N - 1; i++) { if (D.score[i] >= bar) { const x = X(i), w = Math.max(2, X(i + 1) - x + 1); ctx.fillRect(x, base - D.score[i] * h, w, D.score[i] * h); } } ctx.restore(); }
-    trace(D.score, base, h, 1, INK, 2.5, a);
-    label("action", L.x0, base - h - 18, a, INK2);
+    if (glow > 0) { ctx.save(); ga(a * glow * .85); ctx.fillStyle = ACC; for (let i = 0; i < N - 1; i++) { if (D.evidence[i] >= bar) { const x = X(i), w = Math.max(2, X(i + 1) - x + 1); ctx.fillRect(x, base - D.evidence[i] * h, w, (D.evidence[i] - bar) * h); } } ctx.restore(); }
+    trace(D.evidence, base, h, 1, INK, 2.5, a);
+    label("sound and motion together", L.x0, base - h - 18, a, INK2);
     if (bumpI >= 0) {
       const s = seg(t, B.both + 2.6, .5), s2 = seg(t, B.both + 3.0, .4);
-      const x = X(bumpI), yTop = base - h - 70, yb = base - Math.max(D.score[bumpI], .06) * h;
+      const x = X(bumpI), yTop = base - h - 70, yb = base - Math.max(D.evidence[bumpI], .06) * h;
       ctx.save(); ga(a * s); ctx.fillStyle = "#b9b5aa"; ctx.fillRect(x - 26, yb - 44, 52, 44 + 6); ctx.strokeStyle = RULE; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, yb - 44); ctx.lineTo(x, yTop + 16); ctx.stroke(); ctx.restore();
       cross(x, yb - 22, 24, a * s2);
       const right = x > (L.x0 + L.x1) / 2;
       label("a menu screen, loud but still: marked down", x + (right ? -14 : 14), yTop + 8, a * s2, INK, L.note, right ? "right" : "left");
     }
-    if (t < B.bar) { t1 = ["Action is when both rise together", fade(t, B.both, B.bar)]; t2 = ["Menus and loading screens get marked down.", fade(t, B.both + 2.8, B.bar)]; }
+    if (t < B.bar) { t1 = ["Action is when both rise together", fade(t, B.both, B.bar)]; t2 = ["Magenta: sound and motion up at the same time. Menus and loading screens get marked down.", fade(t, B.both + 2.8, B.bar)]; }
     // 5. the bar and the clips lifting out
     if (t >= B.bar) {
       const bs = ease(seg(t, B.bar, .8)), yb = base - bar * h;
       ctx.save(); ga(a); ctx.strokeStyle = INK; ctx.lineWidth = 4; ctx.setLineDash([14, 10]); ctx.beginPath(); ctx.moveTo(L.x0, yb); ctx.lineTo(L.x0 + bs * PW_, yb); ctx.stroke(); ctx.restore();
-      label("the bar", L.x0, yb - 14, bs, INK, L.note, "left");
+      ctx.save(); ga(bs); ctx.fillStyle = PAPER; ctx.fillRect(L.x0 - 4, yb - 14 - L.note, L.note * 3.6, L.note + 10); ctx.restore(); label("the bar", L.x0, yb - 14, bs, INK, L.note, "left");
       clips.forEach((c, k) => { const s = io(seg(t, B.bar + .9 + k * .17, .8)); if (s <= 0) return; const y0 = base - c.v * h, y1 = L.shelf + (TALL ? 60 : 40); const y = y0 + (y1 - y0) * s; const w = 46 + 10 * s, hh = 82 + 18 * s; frame(X(c.i), y, w, hh, 1); if (s < 1) { ctx.save(); ga(.5 * (1 - s)); ctx.strokeStyle = ACC; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(X(c.i), y0); ctx.lineTo(X(c.i), y); ctx.stroke(); ctx.restore(); } });
       label(clips.length + " clips from " + Math.round(dur / 60) + " minutes", (L.x0 + L.x1) / 2, L.shelf - 70, seg(t, B.bar + 2.8, .5), INK2, L.note + 4, "center");
       t1 = ["Every clip has to clear the same bar", fade(t, B.bar, B.promise)];
