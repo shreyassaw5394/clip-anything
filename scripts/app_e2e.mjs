@@ -82,11 +82,11 @@ try {
   check((await page.textContent("#ready-text")) === "Ready", "ready line is a single Ready dot");
   check(!(await page.isHidden("#hints")), "first-run hints show on a fresh profile");
   check((await page.textContent("#start")) === "Make 10 clips", "primary button names the count");
+  await page.screenshot({ path: path.join(shots, "01-home-1280.png") });
   await page.fill("#count", "4");
   check((await page.textContent("#start")) === "Make 4 clips", "primary button tracks the slider");
   await page.fill("#count", "1");
   check((await page.textContent("#start")) === "Make 1 clip", "singular at 1");
-  await page.screenshot({ path: path.join(shots, "01-home-1280.png") });
 
   // empty and error states before any run
   await page.focus("#start");
