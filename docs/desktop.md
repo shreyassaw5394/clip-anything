@@ -77,6 +77,10 @@ to about 760 px wide.
 Analysis speed is the same as the CLI: a one-hour 1080p recording takes about a minute on a
 recent laptop, plus a few seconds per clip to render.
 
+Bundle sizes (CI, 2026-11-13, with captions and the native window): macOS arm64 420 MiB
+unpacked / 163 MiB zip / 178 MiB dmg; Windows x86_64 791 MiB unpacked / 311 MiB zip. The
+native window adds about 13 MiB on macOS.
+
 ## Prefer the terminal?
 
 One paste installs `uv`, `ffmpeg` and the tool:
