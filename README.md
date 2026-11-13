@@ -39,6 +39,12 @@ No account, no upload, no watermark. You type one line, wait a minute or two, an
 
 A desktop app for Windows and Mac is coming on the [Releases page](https://github.com/shreyassaw5394/clip-anything/releases). Download, open, drop a recording on it: one strip of settings, a live action curve while it works, then the clips themselves to preview, copy a post line from, or delete. Already installed the command line? `clip-anything app` opens the same thing ([docs/desktop.md](docs/desktop.md)).
 
+**See it in 30 seconds**
+
+![The app in use: a recording dropped in, Make 10 clips pressed, the action curve drawing with markers, then the grid of vertical clips](https://raw.githubusercontent.com/shreyassaw5394/clip-anything/main/assets/howto.gif)
+
+Drop, Make clips, play, pick, post. The same walk-through as a video: [16:9](https://shipatmidnight.dev/clip-anything/media/howto-16x9.mp4) or the [vertical version](https://shipatmidnight.dev/clip-anything/media/howto-reel.mp4).
+
 <details>
 <summary>Before Nov 15 (package not on PyPI yet)</summary>
 
@@ -152,7 +158,7 @@ Want AI titles and smarter picks? Run `clip-anything setup`, then add `--ai`. Lo
 
 ## How it picks moments
 
-It listens for sudden loud sounds (shots, explosions, hits, shouting) and loudness jumps over what the recording sounded like a minute earlier. It watches for motion across the whole frame, scene cuts and flashes. A moment needs both the sound and the picture to spike; a loud menu sound on a still screen does not count. Each clip starts a bit before the peak so you see the build-up, and ends at a quiet point. Details and measured numbers are in [docs/benchmark.md](docs/benchmark.md).
+It listens for sudden loud sounds (shots, explosions, hits, shouting) and loudness jumps over what the recording sounded like a minute earlier. It watches for motion across the whole frame, scene cuts and flashes. A moment needs both the sound and the picture to spike; a loud menu sound on a still screen does not count. Each clip starts a bit before the peak so you see the build-up, and ends at a quiet point. A 30-second [explainer video](https://shipatmidnight.dev/clip-anything/media/explainer-16x9.mp4) draws this from the saved signals of a real match. Details and measured numbers are in [docs/benchmark.md](docs/benchmark.md).
 
 ## Compared with other clippers
 
