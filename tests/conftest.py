@@ -75,3 +75,11 @@ def speech_video(tmp_path_factory) -> Path:
     if p is None:
         pytest.skip("macOS `say` not available for the speech stand-in")
     return p
+
+
+@pytest.fixture(autouse=True)
+def _crash_logs_in_tmp(tmp_path, monkeypatch):
+    """Failed runs write a crash log; during tests it goes under tmp, never the real home."""
+    from clip_anything import crashlog
+
+    monkeypatch.setattr(crashlog, "log_dir", lambda: tmp_path / "crash-logs")
