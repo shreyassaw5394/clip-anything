@@ -148,6 +148,8 @@ The full list of flags is in [docs/reference.md](docs/reference.md#all-options).
 - The 9:16 crop follows the action instead of staying centred
 - A `report.json` next to the clips with the time, score and reason for each one
 
+Want AI titles and smarter picks? Run `clip-anything setup`, then add `--ai`. Local Ollama by default, or your own OpenAI/Anthropic key; see [docs/ai-mode.md](docs/ai-mode.md).
+
 ## How it picks moments
 
 It listens for sudden loud sounds (shots, explosions, hits, shouting) and loudness jumps over what the recording sounded like a minute earlier. It watches for motion across the whole frame, scene cuts and flashes. A moment needs both the sound and the picture to spike; a loud menu sound on a still screen does not count. Each clip starts a bit before the peak so you see the build-up, and ends at a quiet point. Details and measured numbers are in [docs/benchmark.md](docs/benchmark.md).

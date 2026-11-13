@@ -2,7 +2,15 @@
 
 All notable changes to Clip Anything. Dates are the day the change landed.
 
-## Unreleased (0.1.0)
+## 0.2.0 — 2026-11-13
+
+- Desktop app for Windows and Mac (download, open, drop a recording in); Windows supported and tested in CI
+- `clip-anything setup`: installs ffmpeg, captions and an optional local AI model if missing, skips what is there
+- `--ai` mode: better picks, titles and a hook line from a local Ollama model, or your own OpenAI/Anthropic key
+- Plain-language README with step-by-step scenarios; Claude Code and Cursor skills; `npx clip-anything` launcher
+- Logo and images; feedback issue template
+
+## 0.1.0 — 2026-11-12
 
 First release, built in the open for the Ship at Midnight launch.
 
