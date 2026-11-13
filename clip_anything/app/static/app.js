@@ -154,6 +154,7 @@
       $("ai-note").textContent = "Titles, hooks and a second opinion on the picks from a local model. Not set up yet: Set up installs Ollama and a model.";
       $("ai").disabled = true;
     }
+    briefState();
     homeProblem();
     renderRecent(c.recent || []);
   }
@@ -205,6 +206,8 @@
         $("facecam").checked = r.facecam !== "off";
         $("follow").checked = r.crop !== "center";
         $("ai").checked = !!r.ai && !$("ai").disabled;
+        setPreset(r.preset || "");
+        briefState();
         $("start").focus();
       });
       li.append(b);
@@ -328,7 +331,27 @@
       facecam: $("facecam").checked ? "auto" : "off",
       crop: $("follow").checked ? "follow" : "center",
       ai: $("ai").checked,
+      preset: (document.querySelector(".chip[aria-pressed=true]") || {}).dataset ? (document.querySelector(".chip[aria-pressed=true]").dataset.preset || "") : "",
+      brief: $("ai").checked ? $("brief").value.trim() : "",
     };
+  }
+  /** Chips: at most one pressed; pressing it again clears. The brief box follows the AI toggle. */
+  function setPreset(name) {
+    for (const b of document.querySelectorAll(".chip")) b.setAttribute("aria-pressed", String(!!name && b.dataset.preset === name));
+  }
+  function briefState() {
+    const on = $("ai").checked && !$("ai").disabled;
+    $("brief").disabled = !on;
+    $("brief-note").textContent = on
+      ? "The model scores every moment on how well it matches, and the clips say what matched."
+      : "Needs AI on: the model scores every moment on how well it matches, and the clips say what matched.";
+  }
+  function wireLookingFor() {
+    for (const b of document.querySelectorAll(".chip")) {
+      b.addEventListener("click", () => setPreset(b.getAttribute("aria-pressed") === "true" ? "" : b.dataset.preset));
+    }
+    $("ai").addEventListener("change", briefState);
+    briefState();
   }
   function countChanged() {
     const n = parseInt($("count").value, 10) || 1;
@@ -596,6 +619,8 @@
       node.querySelector(".why").textContent = c.why || "";
       node.dataset.peak = String(c.peak_offset || 0);
       node.querySelector(".card-hook").textContent = c.hook || "";
+      const match = node.querySelector(".card-match");
+      if (c.matches) { match.hidden = false; match.textContent = "Matches: " + c.matches; }
       const label = "Clip " + c.rank + ", " + mmss(c.start) + " to " + mmss(c.end) + (c.why ? ", " + c.why : "") + (c.title ? ", " + c.title : "");
       node.setAttribute("aria-label", label);
       if (c.file) wireCard(node, video);
@@ -810,6 +835,7 @@
   }
 
   wire();
+  wireLookingFor();
   hints();
   countChanged();
   setInputs([]);

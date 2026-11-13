@@ -1,6 +1,6 @@
 {
   "name": "clip-anything",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Thin launcher for the clip-anything Python CLI: long gameplay recording in, top N vertical highlight clips out. Runs uvx clip-anything.",
   "bin": {
     "clip-anything": "bin/clip-anything.js"

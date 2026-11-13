@@ -239,9 +239,44 @@ def action_score(sig: Signals, opts: ScoringOptions) -> tuple[np.ndarray, dict[s
         weak = edge & (agree < opts.edge_agree)
         score = np.where(weak, score * opts.edge_factor, score)
     comps["agree"] = agree
+    score = extra_bonuses(score, sig, opts, comps)
     if opts.min_evidence > 0 or opts.w_evidence > 0:
         comps.update(evidence(sig, opts, gates))
     return np.clip(score, 0.0, 1.0), comps
+
+
+def extra_bonuses(
+    score: np.ndarray, sig: Signals, opts: ScoringOptions, comps: dict[str, np.ndarray]
+) -> np.ndarray:
+    """10-01 signals as multiplicative bonuses: score *= 1 + sum(w * signal). None of them can
+    make a clip out of nothing (0 stays 0) and the action bar is applied afterwards.
+    voice_react: a voice reaction within +-1 s.  fade: a fade to black within fade_look_s
+    after the moment.  stinger: tonal music hit.  All three default to weight 0: measured on
+    three labelled recordings they moved no top-10 pick (presets turn them on); they still
+    show in the report and the reason line."""
+    from scipy.ndimage import maximum_filter1d
+
+    hop = sig.hop_s
+    bonus = np.zeros(sig.n)
+    vr = _raw(sig, "audio.voice_react", 0.0)
+    if vr is not None and opts.w_voice > 0:
+        vr = maximum_filter1d(vr, size=2 * int(round(1.0 / hop)) + 1, mode="nearest")
+        comps["audio.voice_react"] = vr
+        bonus += opts.w_voice * vr
+    fd = _raw(sig, "video.fade", 0.0)
+    if fd is not None and opts.w_fade > 0:
+        look = max(1, int(round(opts.fade_look_s / hop)))
+        # fade within (i, i + look]: shift left so the bonus lands before the black
+        ahead = np.concatenate([fd[1:], np.zeros(1)])
+        before = maximum_filter1d(ahead, size=look, mode="constant", origin=-(look // 2))
+        comps["video.fade"] = before
+        bonus += opts.w_fade * before
+    st = _raw(sig, "audio.stinger", 0.0)
+    if st is not None and opts.w_stinger > 0:
+        st = maximum_filter1d(st, size=2 * int(round(1.0 / hop)) + 1, mode="nearest")
+        comps["audio.stinger"] = st
+        bonus += opts.w_stinger * st
+    return score * (1.0 + bonus)
 
 
 def smooth(score: np.ndarray, hop_s: float, sigma_s: float) -> np.ndarray:
@@ -251,12 +286,14 @@ def smooth(score: np.ndarray, hop_s: float, sigma_s: float) -> np.ndarray:
     return gaussian_filter1d(score, sigma=sigma, mode="nearest") if sigma > 0 else score
 
 
-def find_peaks(sm: np.ndarray, hop_s: float, opts: ScoringOptions) -> tuple[np.ndarray, np.ndarray]:
+def find_peaks(
+    sm: np.ndarray, hop_s: float, opts: ScoringOptions, gap_s: float | None = None
+) -> tuple[np.ndarray, np.ndarray]:
     from scipy.signal import find_peaks as _fp
 
     if sm.size == 0 or float(sm.max()) <= 0:
         return np.zeros(0, dtype=int), np.zeros(0)
-    distance = max(1, math.ceil(opts.min_gap_s / hop_s))
+    distance = max(1, math.ceil((opts.min_gap_s if gap_s is None else gap_s) / hop_s))
     # floor only: prominence + distance do the real selection. A high percentile floor
     # drops short bursts once sustained events (motion) add mass to the distribution.
     height = max(opts.min_height, float(np.percentile(sm, opts.height_pct)))
@@ -312,6 +349,52 @@ def make_window(
     return start, start + d
 
 
+def streak_chain(
+    sm: np.ndarray,
+    p: int,
+    bursts: np.ndarray,
+    hop_s: float,
+    opts: ScoringOptions,
+    bounds: tuple[int, int] | None = None,
+) -> list[int]:
+    """Peak indices (sorted) that form one streak with primary peak p: every burst within
+    streak_gap_s of the chain so far and at least streak_frac of the primary's height, the
+    whole chain inside streak_max_s - 10 s (the window's padding) so it can be one clip.
+    `bounds` = (lo, hi) indices the chain may not leave (midpoints to the neighbouring primary
+    peaks: a burst closer to another peak belongs to that clip). Bursts alternate sides,
+    nearest first, so a streak grows around its peak."""
+    if opts.streak_gap_s <= 0 or bursts.size == 0:
+        return [p]
+    gap = opts.streak_gap_s / hop_s
+    span_max = max(0.0, opts.streak_max_s - 10.0) / hop_s
+    thr = opts.streak_frac * sm[p]
+    lo_b, hi_b = bounds if bounds is not None else (-1, sm.size)
+    before = [int(b) for b in bursts if sm[b] >= thr and lo_b < b < p][::-1]
+    after = [int(b) for b in bursts if sm[b] >= thr and p < b < hi_b]
+    chain = [p]
+    lo = hi = p
+    while before or after:
+        cand_b = before[0] if before and lo - before[0] <= gap else None
+        cand_a = after[0] if after and after[0] - hi <= gap else None
+        if cand_b is None and cand_a is None:
+            break
+        if cand_a is None or (cand_b is not None and lo - cand_b <= cand_a - hi):
+            b, before = cand_b, before[1:]
+            if hi - b > span_max:
+                before = []
+                continue
+            chain.append(b)
+            lo = b
+        else:
+            b, after = cand_a, after[1:]
+            if b - lo > span_max:
+                after = []
+                continue
+            chain.append(b)
+            hi = b
+    return sorted(chain)
+
+
 def _quiet_index(rms: np.ndarray, lo: int, hi: int) -> int | None:
     lo, hi = max(0, lo), min(rms.size - 1, hi)
     if hi < lo:
@@ -331,12 +414,19 @@ def snap_window(
     """Snap start to a quiet point/cut in [start-2, start+0.5], end in [end-0.5, end+2]."""
     rms = sig.arrays.get("audio.rms_db")
     cut = sig.arrays.get("video.cut")
+    black = sig.arrays.get("video.black")
     hop = sig.hop_s
     info = {"start": "none", "end": "none", "moved_s": 0.0}
     new_start, new_end = start, end
 
-    def pick(lo_t: float, hi_t: float) -> tuple[float, str] | None:
+    def pick(lo_t: float, hi_t: float, for_end: bool = False) -> tuple[float, str] | None:
         lo, hi = sig.index_of(lo_t), sig.index_of(hi_t)
+        if for_end and black is not None and black.size == sig.n:
+            # a fade to black is the cleanest end there is: stop as the picture goes dark
+            lo_b, hi_b = sig.index_of(lo_t - 1.5), sig.index_of(hi_t + 1.0)
+            blk = np.nonzero(black[lo_b : hi_b + 1] > 0)[0]
+            if blk.size and (lo_b + int(blk[0])) > 0 and not black[lo_b + int(blk[0]) - 1]:
+                return sig.t0 + (lo_b + int(blk[0])) * hop - hop, "fade"
         if cut is not None and cut.size == sig.n:
             cuts = np.nonzero(cut[lo : hi + 1] > 0)[0]
             if cuts.size:
@@ -350,7 +440,7 @@ def snap_window(
     got = pick(start - 2.0, start + 0.5)
     if got and got[0] < peak_t:
         new_start, info["start"] = got[0], got[1]
-    got = pick(end - 0.5, end + 2.0)
+    got = pick(end - 0.5, end + 2.0, for_end=True)
     if got and got[0] > peak_t:
         t_end = got[0] + hop  # end of that window
         new_end, info["end"] = t_end, got[1]
@@ -400,14 +490,37 @@ def select_candidates(
     bar_on = opts.min_evidence > 0 and "ev_audio" in comps and "ev_visual" in comps
     sm = smooth(score, sig.hop_s, opts.smooth_sigma_s)
     idx, prom = find_peaks(sm, sig.hop_s, opts)
+    # secondary bursts (5 s apart) for the streak merge: several bursts become one clip
+    bursts = find_peaks(sm, sig.hop_s, opts, gap_s=5.0)[0] if opts.streak_gap_s > 0 else idx
     gap = max(1, int(2.0 / sig.hop_s))
     cands: list[Candidate] = []
-    for cid, (p, pr) in enumerate(zip(idx.tolist(), prom.tolist(), strict=True)):
+    peaks = idx.tolist()
+    for cid, (p, pr) in enumerate(zip(peaks, prom.tolist(), strict=True)):
         peak_t = sig.t0 + p * sig.hop_s + sig.hop_s / 2
-        a, b = active_span(sm, p, opts.span_frac, gap)
+        # a streak may not reach past the midpoint to the neighbouring peak: that side's
+        # bursts (and that window) belong to the other clip, so two clips never swallow
+        # each other through a shared run of bursts
+        lo_b = (peaks[cid - 1] + p) // 2 if cid > 0 else -1
+        hi_b = (peaks[cid + 1] + p + 1) // 2 if cid + 1 < len(peaks) else sig.n
+        chain = streak_chain(sm, p, bursts, sig.hop_s, opts, (lo_b, hi_b))
+        a = active_span(sm, chain[0], opts.span_frac, gap)[0]
+        b = active_span(sm, chain[-1], opts.span_frac, gap)[1]
         span = (sig.t0 + a * sig.hop_s, sig.t0 + (b + 1) * sig.hop_s)
-        start, end = make_window(peak_t, span, min_s, max_s, sig.duration_s, opts.lead_frac)
-        start, end, snap = snap_window(start, end, peak_t, sig, min_s, max_s)
+        lim = max_s
+        if len(chain) >= 3 and span[1] - span[0] + 10.0 > max_s:
+            # three or more bursts that do not fit: the clip may run to streak_max_s
+            lim = max(max_s, min(opts.streak_max_s, span[1] - span[0] + 10.0))
+        start, end = make_window(peak_t, span, min_s, lim, sig.duration_s, opts.lead_frac)
+        if len(chain) > 1:
+            # keep a merged window on its own side of the neighbouring peaks
+            t_lo = sig.t0 + (lo_b + 1) * sig.hop_s if lo_b >= 0 else 0.0
+            t_hi = sig.t0 + hi_b * sig.hop_s if hi_b < sig.n else sig.duration_s
+            c_start, c_end = max(start, t_lo), min(end, t_hi)
+            if c_end - c_start >= min_s and c_start < peak_t < c_end:
+                start, end = c_start, c_end
+        start, end, snap = snap_window(start, end, peak_t, sig, min_s, lim)
+        if len(chain) > 1:
+            snap["streak"] = len(chain)
         # smoothed value for ordering plus the raw value at the peak: a 1 s burst must not
         # be flattened below the floor by the smoothing alone
         c_score = 0.5 * float(sm[p]) + 0.5 * float(score[p])
@@ -415,6 +528,8 @@ def select_candidates(
             ev = float(comps["evidence"][p])
             c_score = c_score * ((1.0 - opts.w_evidence) + opts.w_evidence * ev)
         components = {k.split(".", 1)[-1]: round(float(v[p]), 4) for k, v in comps.items()}
+        if len(chain) > 1:
+            components["streak"] = float(len(chain))
         features = {k: round(float(v[p]), 4) for k, v in sig.arrays.items() if v.size == sig.n}
         cands.append(
             Candidate(

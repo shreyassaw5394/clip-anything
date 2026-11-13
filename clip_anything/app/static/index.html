@@ -120,6 +120,20 @@
         <label class="check"><input type="checkbox" id="ai" name="ai"><span>Smarter picks and titles (AI)<small class="check-note" id="ai-note">A local model gives every clip a title and a hook and double-checks the picks. Nothing leaves this computer.</small></span></label>
         <p class="note warn" id="ai-cloud" hidden></p>
       </div>
+      <fieldset class="field field-look">
+        <legend>What are you looking for?</legend>
+        <div class="chips" role="group" aria-label="Kinds of moments" aria-describedby="chips-note">
+          <button type="button" class="chip" data-preset="shooter" aria-pressed="false">Fights</button>
+          <button type="button" class="chip" data-preset="funny" aria-pressed="false">Funny</button>
+          <button type="button" class="chip" data-preset="sports" aria-pressed="false">Big plays</button>
+          <button type="button" class="chip" data-preset="racing" aria-pressed="false">Crashes</button>
+          <button type="button" class="chip" data-preset="horror" aria-pressed="false">Calm but tense</button>
+        </div>
+        <p class="note" id="chips-note">Pick one to lean the picks that way. Works without AI.</p>
+        <label class="brief-label" for="brief">In your own words</label>
+        <textarea id="brief" name="brief" rows="2" maxlength="300" placeholder="funny fails and reactions · clutch 1v3s · boss phase changes" aria-describedby="brief-note" disabled></textarea>
+        <p class="note" id="brief-note">Needs AI on: the model scores every moment on how well it matches, and the clips say what matched.</p>
+      </fieldset>
     </form>
 
     <section class="recent" id="recent-section" aria-labelledby="h-recent" hidden>
@@ -255,6 +269,7 @@
       <h3 class="card-why"><span class="why"></span></h3>
       <p class="card-title"></p>
       <p class="card-hook"></p>
+      <p class="card-match" hidden></p>
       <p class="card-score"><span class="score"></span></p>
       <div class="card-actions">
         <button type="button" class="link" data-act="open">Open</button>

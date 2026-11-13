@@ -35,7 +35,17 @@ from .video_signals import finalize as video_finalize
 
 SEGMENT_S = 900.0  # analysis checkpoint every 15 min of media (resume after a kill)
 
-AUDIO_NAMES = ("audio.rms_db", "audio.flux", "audio.onset", "audio.loud_rel")
+AUDIO_NAMES = (
+    "audio.rms_db",
+    "audio.flux",
+    "audio.onset",
+    "audio.loud_rel",
+    "audio.centroid",
+    "audio.flat",
+    "audio.mod",
+    "audio.voice_react",
+    "audio.stinger",
+)
 VIDEO_NAMES = (
     "video.motion",
     "video.hist_delta",
@@ -45,7 +55,12 @@ VIDEO_NAMES = (
     "video.cspread",
     "video.still",
     "video.stroke",
+    "video.bright",
+    "video.bmin",
+    "video.black",
+    "video.fade",
 )
+VIDEO_DERIVED = ("video.cut", "video.black", "video.fade")  # recomputed by video_finalize
 
 
 def _analysis_fingerprint(opts: Options) -> str:
@@ -170,7 +185,7 @@ def _run_video(
     pre = {
         k: np.asarray(v, np.float32)
         for k, v in (prefix or {}).items()
-        if k.startswith("video.") and k != "video.cut"
+        if k.startswith("video.") and k not in VIDEO_DERIVED
     }
     parts: list[dict[str, np.ndarray]] = [pre] if pre else []
     done_s = len(pre["video.motion"]) * a.hop_s if pre else 0.0
@@ -203,7 +218,8 @@ def _run_video(
         n_seg = (
             int(round(seg_len / a.hop_s)) if seg_start + seg_len < info.duration_s - 1e-6 else None
         )
-        arrays.pop("video.cut", None)
+        for k in VIDEO_DERIVED:
+            arrays.pop(k, None)
         if n_seg is not None:
             arrays = {k: v[:n_seg] for k, v in arrays.items()}
         parts.append(arrays)
@@ -320,6 +336,33 @@ def analyse_signals(
     return arrays
 
 
+def _exc_text(exc: BaseException) -> str:
+    """`zlib.error: Error -3 ...` rather than a bare `error: ...`: module-qualified when the
+    class name alone says nothing."""
+    cls = type(exc)
+    top = (cls.__module__ or "").split(".")[0]
+    name = cls.__name__ if top in ("builtins", "clip_anything") else f"{top}.{cls.__name__}"
+    return f"{name}: {str(exc)[:160]}".rstrip(": ")
+
+
+def optional_stage(
+    stage: str, what: str, report: Report, on_event: OnEvent | None, fn: Callable, default
+):
+    """Run an optional stage (captions, facecam, AI). Whatever goes wrong inside it (a lazily
+    imported module that fails to load from a damaged bundle, a model file that will not
+    read, a bug) becomes one warning and the run continues with that feature off."""
+    try:
+        return fn()
+    except Exception as exc:  # noqa: BLE001 - optional stages never kill a run
+        reason = _exc_text(exc)
+        message = f"{what} off: {reason}"
+        report.warnings.append(Warning(stage, f"{stage}_off", message))
+        report.stages.append(Stage(stage, "failed", 0.0, reason))
+        emit(on_event, Event(stage, "warn", message=message))
+        emit(on_event, Event(stage, "skipped", message=message))
+        return default
+
+
 def _speech_stage(
     info: MediaInfo,
     caps: FFmpegCaps,
@@ -389,14 +432,16 @@ def _speech_stage(
 def _facecam_stage(
     info: MediaInfo, caps: FFmpegCaps, opts: Options, report: Report, on_event: OnEvent | None
 ):
-    from .facecam import detect_facecam
-
     t0 = time.time()
     emit(on_event, Event("facecam", "start"))
     try:
+        from .facecam import detect_facecam
+
         fc = detect_facecam(info, caps)
-    except Exception as exc:  # optional layer: never blocks a clip
-        report.warnings.append(Warning("facecam", "facecam_error", f"facecam detect: {exc}"))
+    except Exception as exc:  # noqa: BLE001 - optional layer (cv2, cascade): never blocks a clip
+        message = f"facecam off: {_exc_text(exc)}"
+        report.warnings.append(Warning("facecam", "facecam_error", message))
+        emit(on_event, Event("facecam", "warn", message=message))
         fc = None
     detail = f"{fc.corner} conf {fc.confidence:.2f}" if fc else "none"
     report.stages.append(Stage("facecam", "ok", round(time.time() - t0, 3), detail))
@@ -511,6 +556,9 @@ def run(
     speech_on = (opts.speech.captions or opts.speech.rank) and info.has_audio
     widen = (speech_on and opts.speech.rank) or rerank is not None
     n_select = opts.clips.count * 3 if widen else opts.clips.count
+    if rerank is not None and int(getattr(rerank, "widen", 3)) > 3:
+        # a brief: look further down the action order (5N, at most 40) for what was asked
+        n_select = min(40, opts.clips.count * int(rerank.widen))
     top, total, _sm = select_candidates(
         sig, opts.scoring, n_select, opts.clips.min_s, opts.clips.max_s
     )
@@ -518,13 +566,20 @@ def run(
     report.stages.append(Stage("score", "ok", round(time.time() - t0, 3), f"{total} candidates"))
     transcripts: dict = {}
     if speech_on and top:
-        transcripts = _speech_stage(info, caps, opts, sig, top, report, on_event, cancel)
+        transcripts = optional_stage(
+            "speech", "captions", report, on_event,
+            lambda: _speech_stage(info, caps, opts, sig, top, report, on_event, cancel), {},
+        )  # fmt: skip
         if transcripts and rerank is None:
             top = sorted(top, key=lambda c: c.score, reverse=True)[: opts.clips.count]
     if rerank is not None and top and not cancel.is_set():
         if transcripts:
             top = sorted(top, key=lambda c: c.score, reverse=True)
-        top = list(rerank(top, info, report, transcripts))[: opts.clips.count]
+        top = optional_stage(
+            "ai", "AI", report, on_event,
+            lambda: list(rerank(top, info, report, transcripts))[: opts.clips.count],
+            top[: opts.clips.count],
+        )  # fmt: skip
     facecam = None
     if opts.layout.facecam == "auto" and top and not opts.render.dry_run:
         facecam = _facecam_stage(info, caps, opts, report, on_event)
@@ -587,7 +642,10 @@ def run(
     out_dir = Path(opts.render.out_dir)
     report.out_dir = str(out_dir)
     if transcripts and opts.speech.captions and not opts.render.dry_run:
-        _write_captions(report, transcripts, opts, caps, Path(info.path).stem)
+        optional_stage(
+            "render", "captions", report, on_event,
+            lambda: _write_captions(report, transcripts, opts, caps, Path(info.path).stem), None,
+        )  # fmt: skip
     if opts.render.dry_run:
         for c in report.clips:
             c.status = "skipped"
@@ -903,9 +961,13 @@ def _run_many(
         for idx, cands in by_src.items():
             info = session.sources[idx].info
             if info.has_audio:
-                transcripts[idx] = _speech_stage(
-                    info, caps, opts, sigs[idx], cands, report, on_event, cancel
-                )
+                transcripts[idx] = optional_stage(
+                    "speech", "captions", report, on_event,
+                    lambda i=info, sg=sigs[idx], cs=cands: _speech_stage(
+                        i, caps, opts, sg, cs, report, on_event, cancel
+                    ),
+                    {},
+                )  # fmt: skip
         if any(transcripts.values()):
             top = sorted(top, key=lambda c: c.score, reverse=True)[: opts.clips.count]
             by_src = {}
@@ -1002,7 +1064,13 @@ def _run_many(
                 clips=[c for c in report.clips if c.source_index == idx],
             )
             if transcripts.get(idx) and opts.speech.captions:
-                _write_captions(sub, transcripts[idx], opts, caps, Path(src.info.path).stem)
+                optional_stage(
+                    "render", "captions", report, on_event,
+                    lambda r=sub, t=transcripts[idx], stem=Path(src.info.path).stem: (
+                        _write_captions(r, t, opts, caps, stem)
+                    ),
+                    None,
+                )  # fmt: skip
             render_all(
                 src.info,
                 caps,

@@ -40,6 +40,8 @@ clip-anything <video or folder> [more videos] [options]
 | `--audio-track` | `auto` | Which audio stream to analyse: `auto`, `all`, `game`, `mic`, or a stream number. Useful for OBS recordings with separate game and mic tracks |
 | `--vision` | off | Re-rank the top clips and give them titles with a local Ollama vision model (see below) |
 | `--min-score` | 0.5 | Action bar 0..1 that every clip must clear (audio and motion measured against fixed real-footage levels); `0` ranks the file against itself |
+| `--preset` | | What to look for, no AI needed: `shooter`, `racing`, `sports`, `horror` (calm but tense: longer build-up, lower bar on the burst), `story`, `funny`. A weight set over the defaults; the app's chips are the same thing |
+| `--ai-brief` | | With `--ai`: what you are looking for, in your words (`"funny fails"`, `"clutch 1v3s"`). The model also rates every candidate on the match; see [ai-mode.md](ai-mode.md) |
 | `--config` | | TOML file with weights and settings (see below) |
 | `--dry-run` | | Write `report.json` only: what would be clipped and why, no rendering |
 | `--json` | | Print the report to stdout (progress goes to stderr) |
@@ -78,6 +80,11 @@ w_card = 0.8      # penalty for static cards (lobby, menu, loading)
 min_score = 0.2     # relative floor: nothing below max(this, 0.35 x best) is returned
 min_evidence = 0.5  # absolute action bar (--min-score): audio AND motion vs real-footage levels
 lead_frac = 0.6   # share of the clip before the peak (build-up)
+streak_gap_s = 25.0  # bursts this close merge into one clip (3+ may stretch it to streak_max_s)
+w_voice = 0.0     # bonus for a voice reaction (mic or mix); 0 by default, presets turn it on
+w_fade = 0.0      # bonus for a fade to black right after the moment; a fade is always a clean end
+w_stinger = 0.0   # bonus for a tonal music hit
+# preset = "funny"  # same as --preset
 
 [layout]
 crop = "follow"   # or "center"

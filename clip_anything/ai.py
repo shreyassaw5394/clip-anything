@@ -27,7 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .ai_prompts import HOOK_CHARS, SYSTEM, clip_prompt
+from .ai_prompts import HOOK_CHARS, SYSTEM, brief_text, clip_prompt
 from .events import Event, OnEvent, emit
 from .report import Report, Stage, Warning
 from .vision import (
@@ -54,6 +54,10 @@ MAX_CONSECUTIVE_FAILURES = 2
 MAX_RESPONSE_BYTES = 1 << 20
 MAX_FRAME_BYTES = 200_000  # a 320 px proxy jpeg is ~15 KB; anything larger is not sent
 AI_WEIGHT = 0.3
+BRIEF_WEIGHT = 0.4  # with a brief the AI opinion (excitement + match) carries more
+WIDEN = 3  # candidates considered per requested clip
+BRIEF_WIDEN = 5  # ...with a brief (capped at MAX_BRIEF_ITEMS)
+MAX_BRIEF_ITEMS = 40
 SETUP_HINT = (
     "no AI provider available: run `clip-anything setup` for a local Ollama, or set "
     "OPENAI_API_KEY / ANTHROPIC_API_KEY (or pass --ai-key) and choose --ai-provider"
@@ -84,6 +88,8 @@ class AISettings:
 @dataclass
 class Reply:
     score: float | None = None  # 1..10 when frames were rated
+    match: float | None = None  # 1..10 how well the moment fits the brief (brief runs only)
+    matches: str | None = None  # one line: what matches the brief
     title: str | None = None
     hook: str | None = None
     reaction: str | None = None
@@ -152,6 +158,8 @@ class Provider:
     vision = False  # True when frames can be sent
     host = ""  # where data goes; "" = this machine
 
+    need_match = False  # set by the Reranker for brief runs: replies must carry "match"
+
     def ask(self, prompt: str, frames: list[bytes]) -> Reply:  # pragma: no cover - abstract
         raise NotImplementedError
 
@@ -197,7 +205,7 @@ class OllamaProvider(Provider):
             data = _post_json(f"{self.base}/api/generate", payload, REQUEST_TIMEOUT_S)
         except (urllib.error.URLError, OSError, ValueError, TimeoutError) as exc:
             return Reply(error=f"ollama: {exc.__class__.__name__}")
-        return parse_reply(data.get("response", ""), need_score=bool(images))
+        return parse_reply(data.get("response", ""), bool(images), self.need_match)
 
 
 class OpenAIProvider(Provider):
@@ -247,7 +255,7 @@ class OpenAIProvider(Provider):
             text = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError):
             return Reply(error="openai: unexpected response shape")
-        return parse_reply(text, need_score=bool(images))
+        return parse_reply(text, bool(images), self.need_match)
 
 
 class AnthropicProvider(Provider):
@@ -296,7 +304,7 @@ class AnthropicProvider(Provider):
             )
         except (KeyError, TypeError, AttributeError):
             return Reply(error="anthropic: unexpected response shape")
-        return parse_reply(text, need_score=bool(images))
+        return parse_reply(text, bool(images), self.need_match)
 
 
 # ---------------------------------------------------------------- parsing
@@ -309,7 +317,14 @@ def _clean(value, limit: int) -> str | None:
     return s[:limit] or None
 
 
-def parse_reply(text, need_score: bool) -> Reply:
+def _score_1_10(value) -> float | None:
+    try:
+        return round(min(10.0, max(1.0, float(value))), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_reply(text, need_score: bool, need_match: bool = False) -> Reply:
     """Tolerant parse of the model's JSON (also inside prose or code fences)."""
     if not isinstance(text, str) or not text.strip():
         return Reply(error="empty reply")
@@ -326,15 +341,19 @@ def parse_reply(text, need_score: bool) -> Reply:
             continue
         score = None
         if need_score:  # a score is only meaningful when frames were rated
-            try:
-                score = min(10.0, max(1.0, float(obj.get("score"))))
-            except (TypeError, ValueError):
+            score = _score_1_10(obj.get("score"))
+            if score is None:
                 return Reply(error="no numeric score")
+        match = _score_1_10(obj.get("match")) if need_match else None
+        if need_match and match is None:
+            return Reply(error="no numeric match")
         title = _clean(obj.get("title"), 60)
         if not title:
             return Reply(error="no title")
         return Reply(
-            score=round(score, 2) if score is not None else None,
+            score=score,
+            match=match,
+            matches=_clean(obj.get("matches"), 120) if need_match else None,
             title=title,
             hook=_clean(obj.get("hook"), HOOK_CHARS + 40),
             reaction=_clean(obj.get("reaction"), 160),
@@ -418,9 +437,26 @@ class Reranker:
     weight: float = AI_WEIGHT
     grab: Callable[..., list[bytes]] = grab_frames
     outcome: AIOutcome = field(default_factory=AIOutcome)
+    brief: str = ""  # what the user is looking for; "" = plain AI mode
+
+    def __post_init__(self) -> None:
+        self.brief = brief_text(self.brief)
+        if self.brief:
+            self.max_items = max(self.max_items, MAX_BRIEF_ITEMS)
+            self.weight = BRIEF_WEIGHT
+
+    @property
+    def widen(self) -> int:
+        """Candidates per requested clip the pipeline should hand over (3, or 5 with a brief)."""
+        return BRIEF_WIDEN if self.brief else WIDEN
 
     def __call__(self, cands: list, info, report: Report, transcripts: dict) -> list:
         t0 = time.time()
+        report.ai = {
+            "brief": self.brief or None,
+            "provider": self.provider.name,
+            "model": self.provider.model,
+        }
         try:
             out = self._run(cands, info, transcripts)
         except Exception as exc:  # noqa: BLE001 - optional stage must never kill a run
@@ -433,6 +469,8 @@ class Reranker:
         if o.reason:
             detail = f"{detail} ({o.reason})"
         report.stages.append(Stage("ai", o.status, o.wall_s, detail))
+        report.ai.update({"status": o.status, "asked": o.asked, "answered": o.answered})
+        report.ai["reranked"] = o.reranked
         if o.status != "ok":
             report.warnings.append(Warning("ai", o.status, f"{o.reason}; action-only order kept"))
         emit(
@@ -452,6 +490,7 @@ class Reranker:
         emit(self.on_event, Event("ai", "start", 0, len(work), "clips", message=p.model))
         replies: list[Reply] = []
         streak = 0
+        p.need_match = bool(self.brief)
         for i, c in enumerate(work):
             frames = self.grab(self.ffmpeg, info.path, c.start, c.end) if p.vision else []
             tr = transcripts.get(c.id) if transcripts else None
@@ -460,7 +499,7 @@ class Reranker:
             if p.vision and not frames:
                 r = Reply(error="no frames")
             else:
-                r = p.ask(clip_prompt(text, bool(frames), hint), frames)
+                r = p.ask(clip_prompt(text, bool(frames), hint, self.brief), frames)
             replies.append(r)
             if r.error:
                 streak += 1
@@ -483,17 +522,32 @@ class Reranker:
                 "model": p.model,
                 "ai_generated": True,
             }
-        can_rerank = p.vision and all(r.score is not None for r in replies)
+            if self.brief:
+                c.features["ai"]["match"] = r.match
+                c.features["ai"]["matches"] = r.matches or None
+        if self.brief:
+            # with a brief the match alone can re-rank (text models rate it from the spoken
+            # lines + action hint); excitement joins in when frames were rated
+            can_rerank = all(r.match is not None for r in replies)
+            opinion = [
+                (r.match if r.score is None else 0.5 * r.score + 0.5 * r.match) if can_rerank else 0
+                for r in replies
+            ]
+        else:
+            can_rerank = p.vision and all(r.score is not None for r in replies)
+            opinion = [r.score or 0 for r in replies]
         if can_rerank:
-            for c, r in zip(work, replies, strict=True):
+            for c, r, v in zip(work, replies, opinion, strict=True):
                 c.components["action"] = c.score
-                c.components["ai"] = round((r.score - 1.0) / 9.0, 4)
-                c.score = blend(c.score, r.score, self.weight)
+                c.components["ai"] = round((v - 1.0) / 9.0, 4)
+                if r.match is not None:
+                    c.components["match"] = round((r.match - 1.0) / 9.0, 4)
+                c.score = blend(c.score, v, self.weight)
             cands.sort(key=lambda c: c.score, reverse=True)
             o.reranked = True
         if o.answered == len(work):
             o.status = "ok"
-            if not p.vision:
+            if not p.vision and not self.brief:
                 o.reason = "text model: titles and hooks only, no re-rank"
         else:
             o.status = "partial" if o.answered else "skipped"
@@ -510,6 +564,8 @@ def sidecar_text(clip) -> str:
     lines = [ai.get("title") or "", ""]
     if ai.get("hook"):
         lines += [ai["hook"], ""]
+    if ai.get("matches"):
+        lines += [f"Matches: {ai['matches']}", ""]
     if ai.get("reaction"):
         lines += [f'Reaction line: "{ai["reaction"]}"', ""]
     lines.append(

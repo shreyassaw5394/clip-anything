@@ -84,6 +84,22 @@ def main(
             "--count is a maximum). 0 = rank the file against itself only",
         ),
     ] = None,
+    preset: Annotated[
+        str | None,
+        typer.Option(
+            "--preset",
+            help="What to look for: shooter | racing | sports | horror | story | funny "
+            "(weight set over the defaults; no AI needed)",
+        ),
+    ] = None,
+    ai_brief: Annotated[
+        str | None,
+        typer.Option(
+            "--ai-brief",
+            help='With --ai: what you are looking for, in your words ("funny fails", '
+            '"clutch 1v3s", "boss phase changes"); clips are also scored on the match',
+        ),
+    ] = None,
     ai: Annotated[
         bool,
         typer.Option(
@@ -130,10 +146,11 @@ def main(
         err.print(f"[red]{exc}[/red]\n{exc.help_text}")
         raise typer.Exit(EXIT_NO_FFMPEG) from None
 
-    from .config import Options, load_config_file
+    from .config import Options, load_config_file, preset_layer
 
     try:
         file_layer = load_config_file(config)
+        preset_l = preset_layer(preset)
         cli_layer = {
             "clips": {"count": count, "min_s": min_s, "max_s": max_s},
             "render": {
@@ -157,7 +174,7 @@ def main(
                 "resume": resume,
             },
         }
-        opts = Options.from_layers(file_layer, cli_layer)
+        opts = Options.from_layers(file_layer, preset_l, cli_layer)
     except InputError as exc:
         err.print(f"[red]{exc}[/red]")
         raise typer.Exit(EXIT_BAD_INPUT) from None
@@ -190,9 +207,14 @@ def main(
         if provider is None:
             err.print(f"[red]--ai: {why}[/red]")
             raise typer.Exit(EXIT_BAD_INPUT)
-        reranker = Reranker(provider, caps.ffmpeg)
+        reranker = Reranker(provider, caps.ffmpeg, brief=(ai_brief or "").strip())
         if not as_json:
-            err.print(f"[dim]{provider.disclosure(opts.clips.count * 3)}[/dim]")
+            err.print(f"[dim]{provider.disclosure(opts.clips.count * reranker.widen)}[/dim]")
+    elif ai_brief:
+        err.print(
+            "[yellow]--ai-brief needs --ai (the free text goes to the model); ignored. "
+            "Without AI, use --preset.[/yellow]"
+        )
 
     from .pipeline import run
     from .ui import ProgressUI, print_summary
