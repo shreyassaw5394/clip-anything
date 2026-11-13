@@ -15,6 +15,8 @@ First release, built in the open for the Ship at Midnight launch.
 - Optional captions via faster-whisper (word-synced, burned in when libass is available, sidecar `.ass` otherwise) and excitement-word bonus; `--speech-rank` re-rank
 - Optional facecam detection, stacked above the gameplay
 - Optional `--vision` re-rank and titles with a local Ollama vision model; degrades silently when Ollama is absent
+- Advanced `--ai` mode: re-rank of the top 3N candidates, titles, post hooks and a featured spoken line via a local Ollama or your own OpenAI/Anthropic key (`--ai-provider`, `--ai-model`, `--ai-vision-model`, `--ai-key`); AI text marked `ai_generated`; degrades to the action-only order with one warning (`docs/ai-mode.md`)
+- One-shot `clip-anything setup`: checks ffmpeg, Python, the captions extra, the Whisper model and optional Ollama; installs only after `--yes` or confirmation; idempotent
 - Library-first design: `clip_anything.pipeline.run()` with progress events, thin typer CLI, TOML config with every weight exposed
 - No telemetry, no accounts, no uploads
 - Repository: CI (ruff and pytest on macOS and Ubuntu, Python 3.11 and 3.13), Dependabot, security policy, third-party licence list, `uv.lock`
