@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from clip_anything.config import Options  # noqa: E402
+from clip_anything.config import Options, preset_layer  # noqa: E402
 from clip_anything.pipeline import run  # noqa: E402
 
 COLS = 6
@@ -45,14 +45,25 @@ def classify(clip: dict, labels: list[dict]) -> tuple[str, str]:
     return best
 
 
-def _run(video: Path, count: int, out: Path, floor: float | None) -> dict:
+def _run(
+    video: Path,
+    count: int,
+    out: Path,
+    floor: float | None,
+    preset: str | None = None,
+    cache_dir: str | None = None,
+    scoring_extra: dict | None = None,
+) -> dict:
     scoring = {} if floor is None else {"min_score": floor}
+    scoring.update(scoring_extra or {})
     opts = Options.from_layers(
+        preset_layer(preset),
         {
             "clips": {"count": count},
             "render": {"out_dir": str(out), "dry_run": True},
             "scoring": scoring,
-        }
+            "analysis": {"cache_dir": cache_dir},
+        },
     )
     return run(video, opts).to_dict()
 
@@ -125,13 +136,24 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--count", type=int, default=10)
     ap.add_argument("--out", default=None)
     ap.add_argument("--sheet", type=int, default=30)
+    ap.add_argument(
+        "--preset", default=None, help="shooter | racing | sports | horror | story | funny"
+    )
+    ap.add_argument(
+        "--cache-dir", default=None, help="signal cache folder (default: next to the video)"
+    )
+    ap.add_argument("--no-sheet", action="store_true", help="skip the contact sheets")
+    ap.add_argument(
+        "--scoring", default=None, help="JSON of ScoringOptions overrides, e.g. '{\"w_text\": 0}'"
+    )
     args = ap.parse_args(argv)
+    extra = json.loads(args.scoring) if args.scoring else None
     video = Path(args.video)
     labels = json.loads(Path(args.labels).read_text()) if Path(args.labels).is_file() else []
     out = Path(args.out or (video.parent / f"out-{video.stem}"))
     out.mkdir(parents=True, exist_ok=True)
 
-    real = _run(video, args.count, out, None)
+    real = _run(video, args.count, out, None, args.preset, args.cache_dir, extra)
     clips = real["clips"]
     t = real["timings"]
     print(
@@ -145,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
         kind, note = classify(c, labels)
         hit += kind == "action"
         duds += kind == "dud"
-        comp = " ".join(f"{k}={v:.2f}" for k, v in c["components"].items())
+        comp = " ".join(f"{k}={v:.2f}" for k, v in c["components"].items() if v)
         print(
             f"{c['rank']:>2} {_hms(c['start'])}-{_hms(c['end'])} {c['score']:6.3f}  {comp}"
             f"  [{kind}] {note}"
@@ -161,8 +183,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     for w in real["warnings"]:
         print(f"warning[{w['stage']}/{w['code']}]: {w['message']}")
+    if args.no_sheet:
+        return 0
 
-    sheet = _run(video, args.sheet, out, 0.0)
+    sheet = _run(video, args.sheet, out, 0.0, args.preset, args.cache_dir, extra)
     contact_sheet(video, sheet["clips"], out / "candidates.jpg", labels)
     top = min(8, len(clips))
     contact_sheet(video, clips[:top], out / f"top{top}.jpg", labels)
