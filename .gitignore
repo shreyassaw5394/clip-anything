@@ -13,3 +13,4 @@ tests/fixtures/inputs/
 .DS_Store
 build/
 packaging/ffmpeg/
+launch-video/out/
