@@ -255,13 +255,18 @@ class _SetupAwareTyper(typer.Typer):
             from .setup_cmd import setup_app
 
             return setup_app(argv[1:], prog_name="clip-anything setup")
+        if argv and argv[0] == "app":
+            from .gui import main as gui_main
+
+            raise SystemExit(gui_main(argv[1:]))
         return super().__call__(*args, **kwargs)
 
 
 app.__class__ = _SetupAwareTyper
 app.registered_commands[0].epilog = (
     "First time? `clip-anything setup` checks ffmpeg, captions and (optional) local AI and "
-    "installs what is missing, with consent. Then add --ai for AI titles and smarter picks."
+    "installs what is missing, with consent. Then add --ai for AI titles and smarter picks. "
+    "Prefer buttons? `clip-anything app` opens the same tool as a window."
 )
 
 

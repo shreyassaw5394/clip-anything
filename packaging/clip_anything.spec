@@ -2,7 +2,8 @@
 """PyInstaller one-folder build of the desktop app. Run from the repo root:
     python packaging/fetch_ffmpeg.py && pyinstaller packaging/clip_anything.spec --noconfirm
 faster-whisper (captions) is bundled unless CLIP_ANYTHING_BUNDLE_CAPTIONS=0 (saves ~150 MB).
-Measured on macOS arm64: 270 MiB / 108 MiB zip without, 416 MiB / 160 MiB zip with."""
+The app UI (clip_anything/app/static) is always bundled; pywebview (native window) when the
+[app] extra is installed in the build environment. Sizes: see docs/desktop.md."""
 
 import os
 import sys
@@ -27,6 +28,11 @@ if FF.is_dir():
             datas.append((str(f), "ffmpeg"))
         elif f.is_file():
             binaries.append((str(f), "ffmpeg"))
+# the app UI (html/css/js/fonts) ships as package data next to clip_anything/app
+static = ROOT / "clip_anything" / "app" / "static"
+for f in static.rglob("*"):
+    if f.is_file():
+        datas.append((str(f), str(Path("clip_anything/app/static") / f.parent.relative_to(static))))
 icon_png = ROOT / "assets" / "icon.png"
 if icon_png.is_file():
     datas.append((str(icon_png), "assets"))
@@ -37,10 +43,22 @@ elif sys.platform == "darwin" and (ROOT / "assets" / "icon.icns").is_file():
     icon = str(ROOT / "assets" / "icon.icns")
 
 bundle_captions = os.environ.get("CLIP_ANYTHING_BUNDLE_CAPTIONS", "1") != "0"
-excludes = ["matplotlib", "PyQt5", "PyQt6", "PySide2", "PySide6", "IPython", "pytest", "typer",
-            "rich", "click"]  # the GUI never imports the CLI layer
+excludes = ["matplotlib", "PyQt5", "PyQt6", "PySide2", "PySide6", "IPython", "pytest"]
 hiddenimports = ["clip_anything.pipeline", "clip_anything.render", "clip_anything.speech",
-                 "clip_anything.facecam", "clip_anything.captions", "clip_anything.vision"]
+                 "clip_anything.facecam", "clip_anything.captions", "clip_anything.vision",
+                 "clip_anything.app.server", "clip_anything.app.launch", "clip_anything.setup_cmd",
+                 "clip_anything.ai"]
+# native window when the [app] extra (pywebview) is installed in the build env; otherwise the
+# bundle opens the default browser (gui.py decides at run time)
+try:
+    import webview  # noqa: F401
+
+    hiddenimports += collect_submodules("webview")
+    datas += collect_data_files("webview")
+    HAVE_WEBVIEW = True
+except ImportError:
+    HAVE_WEBVIEW = False
+print(f"clip_anything.spec: pywebview {'bundled' if HAVE_WEBVIEW else 'not installed: browser mode'}")
 if bundle_captions:
     # faster_whisper ships the Silero VAD model as package data; ctranslate2 loads its
     # backends lazily

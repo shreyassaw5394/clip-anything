@@ -37,7 +37,7 @@ No account, no upload, no watermark. You type one line, wait a minute or two, an
 
 ### No terminal?
 
-A desktop app for Windows and Mac is coming on the [Releases page](https://github.com/shreyassaw5394/clip-anything/releases). Download, open, drop a recording on it.
+A desktop app for Windows and Mac is coming on the [Releases page](https://github.com/shreyassaw5394/clip-anything/releases). Download, open, drop a recording on it: one strip of settings, a live action curve while it works, then the clips themselves to preview, copy a post line from, or delete. Already installed the command line? `clip-anything app` opens the same thing ([docs/desktop.md](docs/desktop.md)).
 
 <details>
 <summary>Before Nov 15 (package not on PyPI yet)</summary>

@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Clip Anything</title>
+<meta name="theme-color" content="#f1efe9">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/static/fonts/BarlowCondensed-Bold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/Barlow-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 512 512" width="28" height="28" aria-hidden="true" focusable="false">
+      <rect x="48" y="344" width="20" height="48" fill="currentColor" opacity=".45"/>
+      <rect x="80" y="308" width="20" height="84" fill="currentColor" opacity=".45"/>
+      <rect x="112" y="328" width="20" height="64" fill="currentColor" opacity=".45"/>
+      <rect x="144" y="284" width="20" height="108" fill="currentColor" opacity=".45"/>
+      <rect x="336" y="300" width="20" height="92" fill="currentColor" opacity=".45"/>
+      <rect x="368" y="336" width="20" height="56" fill="currentColor" opacity=".45"/>
+      <rect x="400" y="316" width="20" height="76" fill="currentColor" opacity=".45"/>
+      <rect x="432" y="348" width="20" height="44" fill="currentColor" opacity=".45"/>
+      <rect x="184" y="96" width="144" height="256" class="mark-clip"/>
+      <rect x="246" y="128" width="20" height="192" fill="currentColor"/>
+    </svg>
+    <span class="brand-name">Clip Anything</span>
+  </div>
+  <nav class="nav" aria-label="Screens">
+    <button type="button" class="nav-btn" data-nav="home" aria-current="page">New run</button>
+    <button type="button" class="nav-btn" data-nav="results" id="nav-results" hidden>Results</button>
+    <button type="button" class="nav-btn" data-nav="setup">Set up</button>
+  </nav>
+  <p class="ready" id="ready" aria-live="polite"><span class="ready-item">Checking this computer…</span></p>
+</header>
+
+<main id="main" tabindex="-1">
+
+  <!-- 1. Home / drop zone -->
+  <section class="screen" id="screen-home" aria-labelledby="h-home">
+    <h1 class="title" id="h-home">Drop a recording<br>or a folder of clips</h1>
+    <div class="drop" id="drop" data-state="empty">
+      <p class="drop-line" id="drop-line">Drop it here, or</p>
+      <div class="drop-actions">
+        <button type="button" class="btn btn-ink" id="choose-file">Choose a recording</button>
+        <button type="button" class="btn" id="choose-folder">Choose a folder</button>
+      </div>
+      <ul class="chosen" id="chosen" aria-label="Chosen recordings"></ul>
+      <button type="button" class="link" id="clear-inputs" hidden>Clear</button>
+    </div>
+
+    <!-- 2. Settings strip -->
+    <form class="settings" id="settings" aria-label="Settings" novalidate>
+      <div class="field field-count">
+        <label for="count">How many clips</label>
+        <div class="count-row">
+          <input type="range" id="count" name="count" min="1" max="20" value="10" step="1" aria-describedby="count-note">
+          <output for="count" id="count-out" class="count-out">10</output>
+        </div>
+        <p class="note" id="count-note">A maximum. Only moments that clear the action bar become clips.</p>
+      </div>
+      <fieldset class="field">
+        <legend>Length</legend>
+        <div class="seg" role="radiogroup" aria-label="Clip length">
+          <label class="seg-item"><input type="radio" name="length" value="short"><span>Short</span><small>15–30 s</small></label>
+          <label class="seg-item"><input type="radio" name="length" value="normal" checked><span>Normal</span><small>15–45 s</small></label>
+          <label class="seg-item"><input type="radio" name="length" value="long"><span>Long</span><small>30–60 s</small></label>
+        </div>
+      </fieldset>
+      <div class="field field-toggles">
+        <label class="check"><input type="checkbox" id="captions" name="captions" checked><span>Captions when there is speech<small class="check-note" id="captions-note" hidden></small></span></label>
+        <label class="check"><input type="checkbox" id="facecam" name="facecam" checked><span>Stack the facecam, if there is one</span></label>
+        <label class="check"><input type="checkbox" id="follow" name="follow" checked><span>Crop follows the action</span></label>
+      </div>
+      <div class="field field-ai">
+        <label class="check"><input type="checkbox" id="ai" name="ai"><span>With AI</span></label>
+        <p class="note" id="ai-note">Titles, hooks and a second opinion on the picks from a local model (Ollama). Nothing leaves this computer.</p>
+        <p class="note warn" id="ai-cloud" hidden></p>
+      </div>
+    </form>
+
+    <div class="run-row">
+      <p class="out-line">Clips go to <code class="out-dir" id="out-dir" translate="no">—</code>
+        <button type="button" class="link" id="change-out">Change</button></p>
+      <button type="button" class="btn btn-ink btn-big" id="start">Make clips</button>
+    </div>
+    <p class="problem" id="home-problem" role="alert"></p>
+
+    <section class="recent" id="recent-section" aria-labelledby="h-recent" hidden>
+      <div class="row-head"><h2 id="h-recent">Recent</h2><button type="button" class="link" id="forget">Forget all</button></div>
+      <ul class="recent-list" id="recent"></ul>
+    </section>
+  </section>
+
+  <!-- 3. Run screen -->
+  <section class="screen" id="screen-run" aria-labelledby="stage" hidden>
+    <div class="run-head">
+      <p class="stage" id="stage">Starting</p>
+      <p class="eta" id="eta"></p>
+    </div>
+    <div class="progress" id="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-labelledby="stage">
+      <div class="progress-fill" id="fill"></div>
+    </div>
+    <p class="detail" id="detail" aria-live="polite"></p>
+    <figure class="curve-wrap">
+      <svg class="curve" id="curve" viewBox="0 0 1000 220" preserveAspectRatio="none" role="img" aria-labelledby="curve-title">
+        <title id="curve-title">Action score over the recording; marked spans are the picked moments</title>
+        <g id="curve-spans"></g>
+        <polyline id="curve-line" points="" fill="none" vector-effect="non-scaling-stroke"></polyline>
+        <line id="curve-head" x1="0" x2="0" y1="0" y2="220" vector-effect="non-scaling-stroke"></line>
+      </svg>
+      <figcaption class="curve-caption" id="curve-caption">Listening for action</figcaption>
+    </figure>
+    <p class="disclosure" id="disclosure" hidden></p>
+    <div class="run-actions"><button type="button" class="btn" id="cancel">Cancel</button></div>
+  </section>
+
+  <!-- 4. Results -->
+  <section class="screen" id="screen-results" aria-labelledby="h-results" hidden>
+    <div class="results-head">
+      <h1 class="title title-sm" id="h-results">Your clips</h1>
+      <p class="results-sub" id="results-sub"></p>
+    </div>
+    <ul class="notes" id="result-notes"></ul>
+    <ul class="grid" id="grid" aria-label="Clips"></ul>
+    <div class="results-actions">
+      <button type="button" class="btn btn-ink" id="open-folder">Open folder</button>
+      <button type="button" class="btn" id="rerun">Re-run with different settings</button>
+      <a class="btn" id="export" href="#" download="report.json">Export report</a>
+    </div>
+  </section>
+
+  <!-- 5. Setup -->
+  <section class="screen" id="screen-setup" aria-labelledby="h-setup" hidden>
+    <h1 class="title title-sm" id="h-setup">Set up this computer</h1>
+    <p class="lead">Each line is checked now. Nothing is installed until you press its button, and every button says exactly what it will run.</p>
+    <ol class="steps" id="steps" aria-busy="true"></ol>
+    <p class="note" id="setup-note">Prefer to do it by hand? The same steps are in the <a href="https://github.com/shreyassaw5394/clip-anything#setup" rel="noopener noreferrer" target="_blank">README</a>.</p>
+    <p class="problem" id="setup-problem" role="alert"></p>
+  </section>
+
+  <!-- Error screen -->
+  <section class="screen" id="screen-error" aria-labelledby="h-error" hidden>
+    <h1 class="title title-sm" id="h-error">That did not work</h1>
+    <p class="lead" id="error-text"></p>
+    <div class="results-actions"><button type="button" class="btn btn-ink" id="error-back">Back</button></div>
+  </section>
+</main>
+
+<footer class="foot">
+  <p>Everything stays on this computer. No account, no upload, no telemetry.</p>
+  <p class="foot-links">Tell us how it went:
+    <a href="https://github.com/shreyassaw5394/clip-anything/issues/new?template=tried-it.md" rel="noopener noreferrer" target="_blank">Tried it</a>
+    <a href="https://discord.gg/s8wj7tBAM" rel="noopener noreferrer" target="_blank">Discord</a>
+    <span class="version" id="version"></span>
+    <button type="button" class="link" id="quit" hidden>Quit</button>
+  </p>
+</footer>
+
+<p class="toast" id="toast" role="status" aria-live="polite"></p>
+
+<template id="card-tpl">
+  <li class="card">
+    <div class="card-media">
+      <video class="card-video" preload="metadata" playsinline muted></video>
+      <div class="card-scrub" aria-hidden="true"></div>
+      <button type="button" class="card-play" aria-label="Play with sound"></button>
+    </div>
+    <div class="card-body">
+      <p class="card-rank"><span class="rank"></span><span class="time"></span></p>
+      <p class="card-title"></p>
+      <p class="card-why"><span class="score"></span><span class="why"></span></p>
+      <p class="card-hook"></p>
+      <div class="card-actions">
+        <button type="button" class="link" data-act="open">Open</button>
+        <button type="button" class="link" data-act="reveal">Reveal in folder</button>
+        <button type="button" class="link" data-act="copy">Copy post text</button>
+        <button type="button" class="link link-danger" data-act="delete">Delete</button>
+      </div>
+      <div class="card-confirm" hidden>
+        <span>Delete this clip file?</span>
+        <button type="button" class="link link-danger" data-act="delete-yes">Delete</button>
+        <button type="button" class="link" data-act="delete-no">Keep</button>
+      </div>
+    </div>
+  </li>
+</template>
+
+<template id="step-tpl">
+  <li class="step">
+    <div class="step-main">
+      <p class="step-label"><span class="step-mark" aria-hidden="true"></span><span class="step-name"></span></p>
+      <p class="step-why"></p>
+      <p class="step-detail"></p>
+      <p class="step-note"></p>
+      <pre class="step-out" translate="no" hidden></pre>
+    </div>
+    <div class="step-side">
+      <button type="button" class="btn step-btn" hidden></button>
+      <div class="step-confirm" hidden>
+        <p class="step-cmd" translate="no"></p>
+        <button type="button" class="btn btn-ink step-yes">Run it</button>
+        <button type="button" class="btn step-no">Not now</button>
+      </div>
+    </div>
+  </li>
+</template>
+
+<script src="/static/app.js" defer></script>
+</body>
+</html>
