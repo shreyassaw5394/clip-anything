@@ -73,6 +73,7 @@ class Report:
     timings: dict[str, float] = field(default_factory=dict)
     out_dir: str | None = None
     report_path: str | None = None
+    ai: dict[str, Any] = field(default_factory=dict)  # --ai run: {brief, provider, model, status}
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -89,6 +90,7 @@ class Report:
             "signals": self.signals,
             "timings": self.timings,
             "out_dir": self.out_dir,
+            "ai": self.ai,
         }
 
     @property

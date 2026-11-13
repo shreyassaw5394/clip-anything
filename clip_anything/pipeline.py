@@ -35,7 +35,17 @@ from .video_signals import finalize as video_finalize
 
 SEGMENT_S = 900.0  # analysis checkpoint every 15 min of media (resume after a kill)
 
-AUDIO_NAMES = ("audio.rms_db", "audio.flux", "audio.onset", "audio.loud_rel")
+AUDIO_NAMES = (
+    "audio.rms_db",
+    "audio.flux",
+    "audio.onset",
+    "audio.loud_rel",
+    "audio.centroid",
+    "audio.flat",
+    "audio.mod",
+    "audio.voice_react",
+    "audio.stinger",
+)
 VIDEO_NAMES = (
     "video.motion",
     "video.hist_delta",
@@ -45,7 +55,12 @@ VIDEO_NAMES = (
     "video.cspread",
     "video.still",
     "video.stroke",
+    "video.bright",
+    "video.bmin",
+    "video.black",
+    "video.fade",
 )
+VIDEO_DERIVED = ("video.cut", "video.black", "video.fade")  # recomputed by video_finalize
 
 
 def _analysis_fingerprint(opts: Options) -> str:
@@ -170,7 +185,7 @@ def _run_video(
     pre = {
         k: np.asarray(v, np.float32)
         for k, v in (prefix or {}).items()
-        if k.startswith("video.") and k != "video.cut"
+        if k.startswith("video.") and k not in VIDEO_DERIVED
     }
     parts: list[dict[str, np.ndarray]] = [pre] if pre else []
     done_s = len(pre["video.motion"]) * a.hop_s if pre else 0.0
@@ -203,7 +218,8 @@ def _run_video(
         n_seg = (
             int(round(seg_len / a.hop_s)) if seg_start + seg_len < info.duration_s - 1e-6 else None
         )
-        arrays.pop("video.cut", None)
+        for k in VIDEO_DERIVED:
+            arrays.pop(k, None)
         if n_seg is not None:
             arrays = {k: v[:n_seg] for k, v in arrays.items()}
         parts.append(arrays)
@@ -540,6 +556,9 @@ def run(
     speech_on = (opts.speech.captions or opts.speech.rank) and info.has_audio
     widen = (speech_on and opts.speech.rank) or rerank is not None
     n_select = opts.clips.count * 3 if widen else opts.clips.count
+    if rerank is not None and int(getattr(rerank, "widen", 3)) > 3:
+        # a brief: look further down the action order (5N, at most 40) for what was asked
+        n_select = min(40, opts.clips.count * int(rerank.widen))
     top, total, _sm = select_candidates(
         sig, opts.scoring, n_select, opts.clips.min_s, opts.clips.max_s
     )

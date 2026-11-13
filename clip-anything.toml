@@ -23,6 +23,12 @@ min_evidence = 0.5  # absolute action bar (--min-score): audio AND motion agains
 prominence = 0.1
 min_gap_s = 30.0
 lead_frac = 0.6   # share of the clip before the peak (build-up)
+w_voice = 0.0     # bonus: a voice reaction on the mic/mix (score *= 1 + w * signal); 0 = off
+w_fade = 0.0      # bonus: a fade to black soon after the moment (something ended)
+w_stinger = 0.0   # bonus: tonal music hit (cutscene music fires it too)
+streak_gap_s = 25.0  # bursts this close to a peak merge into one clip...
+streak_max_s = 60.0  # ...which may stretch to this long (beyond max_s) when it needs to
+# preset = "shooter"  # or: racing | sports | horror | story | funny (same as --preset)
 
 [render]
 crf = 20
