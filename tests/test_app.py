@@ -72,12 +72,13 @@ def server(tmp_path):
     out = tmp_path / "clips"
     out.mkdir()
     recent = tmp_path / "recent.json"
-    from clip_anything.app.data import Recent
+    from clip_anything.app.data import Prefs, Recent
 
     s = AppServer(
         runner=_runner_for(out),
         recent=Recent(recent),
-        picker=lambda kind: [str(tmp_path / "picked.mp4")],
+        prefs=Prefs(tmp_path / "prefs.json"),
+        picker=lambda kind, initial="": [str(tmp_path / ("picked.mp4" if not initial else "x"))],
     )
     s.start()
     yield s, out, tmp_path
@@ -316,3 +317,51 @@ def test_request_parsing_and_why_line():
     c.components = {}
     c.speech = {}
     assert why_line(c) == "Above the action bar"
+
+
+def test_inspect_prefs_and_bar(server, monkeypatch):
+    s, out, tmp = server
+    import clip_anything.app.server as srv
+
+    monkeypatch.setattr(srv.AppServer, "_ffmpeg_caps", lambda self: None)
+    (tmp / "a.mp4").write_bytes(b"\0" * 1234)
+    (tmp / "notes.txt").write_text("x")
+    empty = tmp / "empty"
+    empty.mkdir()
+    res, data = _req(s, "POST", "/api/inspect", body={"inputs": [str(tmp / "a.mp4")]})
+    assert data["items"][0]["kind"] == "file" and data["items"][0]["size_bytes"] == 1234
+    assert data["problem"] == "" and data["videos"] == 1
+    res, data = _req(s, "POST", "/api/inspect", body={"inputs": [str(tmp / "notes.txt")]})
+    assert data["items"][0]["kind"] == "unsupported" and "not a video" in data["problem"]
+    res, data = _req(s, "POST", "/api/inspect", body={"inputs": [str(empty)]})
+    assert data["items"][0]["kind"] == "folder" and "No recordings" in data["problem"]
+    res, data = _req(s, "POST", "/api/inspect", body={"inputs": [str(tmp)]})
+    assert data["items"][0]["videos"] == 1 and data["problem"] == ""
+    res, data = _req(s, "POST", "/api/inspect", body={"inputs": [str(tmp / "gone.mp4")]})
+    assert data["items"][0]["kind"] == "missing" and "Cannot find" in data["problem"]
+    res, _ = _req(s, "POST", "/api/inspect", body={"inputs": "x"})
+    assert res.status == 400
+
+    # the action bar reaches the scoring options; an unknown bar is refused
+    low = JobRequest.from_json({"inputs": [str(tmp / "a.mp4")], "bar": "low"})
+    assert low.options().scoring.min_evidence == 0.3
+    normal = JobRequest.from_json({"inputs": [str(tmp / "a.mp4")]})
+    assert normal.options().scoring.min_evidence == 0.5
+    assert JobRequest.from_json({"inputs": [str(tmp / "a.mp4")], "bar": "x"}).problem()
+
+    # prefs: the last chosen output folder is remembered and offered to the folder picker
+    res, data = _req(s, "POST", "/api/prefs", body={"out_dir": str(out)})
+    assert res.status == 200
+    res, data = _req(s, "GET", "/api/caps")
+    assert data["last_out_dir"] == str(out)
+    res, data = _req(s, "POST", "/api/pick", body={"kind": "out"})
+    assert data["paths"] == [str(tmp / "x")]
+    res, _ = _req(s, "POST", "/api/prefs", body={"out_dir": 5})
+    assert res.status == 400
+    from clip_anything.app.data import Prefs
+
+    pr = Prefs(tmp / "p2.json")
+    pr.set(window={"width": 1000, "height": 700})
+    assert pr.window() == (1000, 700)
+    pr.set(window={"width": 10, "height": 10})
+    assert pr.window() is None

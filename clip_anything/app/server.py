@@ -25,12 +25,14 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from .. import __version__
-from .data import Recent
+from .data import Prefs, Recent
 from .jobs import MAX_COUNT, Job, JobRequest
 
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 CLIP_SUFFIXES = {".mp4", ".ass", ".txt", ".json"}
+VIDEO_SUFFIXES = {".mp4", ".mkv", ".mov", ".webm", ".ts", ".m4v", ".avi", ".flv", ".mts"}
+MAX_INSPECT = 12  # files probed per inspect call; the rest are counted and sized only
 MAX_BODY = 256 * 1024
 MAX_JOBS = 50
 SSE_HEARTBEAT_S = 15.0
@@ -98,6 +100,7 @@ class AppServer:
         runner: Callable | None = None,
         picker: Callable[[str], list[str]] | None = None,
         recent: Recent | None = None,
+        prefs: Prefs | None = None,
         window: str = "browser",
         on_quit: Callable[[], None] | None = None,
     ) -> None:
@@ -106,6 +109,7 @@ class AppServer:
         self.runner = runner
         self.picker = picker
         self.recent = recent or Recent()
+        self.prefs = prefs or Prefs()
         self.window = window
         self.on_quit = on_quit
         self.jobs: dict[str, Job] = {}
@@ -168,6 +172,7 @@ class AppServer:
             "home": str(Path.home()),
             "max_count": MAX_COUNT,
             "recent": self.recent.load(),
+            "last_out_dir": self.prefs.out_dir(),
         }
         self._caps_cache = (now, data)
         return data
@@ -186,6 +191,71 @@ class AppServer:
             "model": getattr(provider, "model", "") or getattr(provider, "text_model", ""),
             "reason": "",
         }
+
+    def inspect(self, paths: list[str]) -> dict:
+        """What the user dropped: per path its kind (file, folder, unsupported, missing), size,
+        duration and the number of recordings in a folder, plus one plain-language problem."""
+        items = []
+        caps = None
+        probed = 0
+        for raw in paths[:200]:
+            p = Path(raw)
+            item = {"path": raw, "name": p.name or raw, "kind": "missing", "size_bytes": 0}
+            if p.is_dir():
+                vids = sorted(
+                    f for f in p.iterdir() if f.is_file() and f.suffix.lower() in VIDEO_SUFFIXES
+                )
+                item.update(
+                    kind="folder",
+                    videos=len(vids),
+                    size_bytes=sum(_size(f) for f in vids),
+                    first=vids[0].name if vids else "",
+                )
+            elif p.is_file():
+                item["size_bytes"] = _size(p)
+                if p.suffix.lower() not in VIDEO_SUFFIXES:
+                    item["kind"] = "unsupported"
+                else:
+                    item["kind"] = "file"
+                    if probed < MAX_INSPECT:
+                        probed += 1
+                        if caps is None:
+                            caps = self._ffmpeg_caps()
+                        item.update(_media(p, caps))
+            items.append(item)
+        kinds = [i["kind"] for i in items]
+        problem = ""
+        if not items:
+            problem = ""
+        elif "missing" in kinds:
+            missing = next(i for i in items if i["kind"] == "missing")
+            problem = f"Cannot find {missing['name']} any more. Choose it again."
+        elif all(k == "unsupported" for k in kinds):
+            problem = (
+                f"{items[0]['name']} is not a video this app can read. "
+                "Try an .mp4, .mkv or .mov recording."
+            )
+        elif not any(i.get("videos", 1 if i["kind"] == "file" else 0) for i in items):
+            problem = (
+                "No recordings in that folder. Choose one with .mp4, .mkv or .mov files in it."
+            )
+        total = sum(i.get("duration_s") or 0.0 for i in items)
+        return {
+            "items": items,
+            "total_duration_s": round(total, 1),
+            "total_size_bytes": sum(i["size_bytes"] for i in items),
+            "videos": sum(i.get("videos", 1 if i["kind"] == "file" else 0) for i in items),
+            "problem": problem,
+        }
+
+    def _ffmpeg_caps(self):
+        from ..errors import FFmpegMissing
+        from ..probe import preflight
+
+        try:
+            return preflight()
+        except FFmpegMissing:
+            return None
 
     def create_job(self, data: dict) -> Job:
         try:
@@ -236,6 +306,15 @@ class AppServer:
         same = (previous.captions, previous.facecam, previous.crop, previous.length, previous.ai)
         return same != (req.captions, req.facecam, req.crop, req.length, req.ai)
 
+    def pick(self, kind: str) -> list[str]:
+        if self.picker is None:
+            return []
+        initial = self.prefs.out_dir() if kind == "out" else ""
+        try:
+            return self.picker(kind, initial)
+        except TypeError:
+            return self.picker(kind)
+
     def _remember(self, job: Job) -> None:
         job.thread.join() if job.thread else None
         if job.state == "done" and job.report is not None:
@@ -250,10 +329,13 @@ class AppServer:
                     "facecam": req.facecam,
                     "crop": req.crop,
                     "ai": req.ai,
+                    "bar": req.bar,
                     "clips": job.result()["ok"],
                     "name": job.result()["input"]["name"],
                 }
             )
+            if req.out_dir and req.out_dir != req.default_out_dir():
+                self.prefs.set(out_dir=str(job.out_dir() or req.out_dir))
             self._caps_cache = None
 
     def job(self, job_id: str) -> Job:
@@ -375,6 +457,33 @@ SETUP_LABELS = {
     "ollama": ("Ollama (local AI)", "Runs a small AI model on this computer for titles and picks."),
     "vision": ("Local AI model (qwen3-vl:4b)", "The model Ollama uses to look at frames; ~3 GB."),
 }
+
+
+def _size(p: Path) -> int:
+    try:
+        return p.stat().st_size
+    except OSError:
+        return 0
+
+
+def _media(p: Path, caps) -> dict:
+    """Duration and frame size via ffprobe when the video tools are present; else nothing."""
+    if caps is None:
+        return {}
+    from ..probe import probe
+
+    try:
+        m = probe(p, caps)
+    except Exception:  # noqa: BLE001 - an unreadable file is reported as such, not raised
+        return {"readable": False}
+    w, h = m.display_size
+    return {
+        "readable": bool(m.has_video or m.has_audio),
+        "duration_s": round(m.duration_s, 1),
+        "width": w,
+        "height": h,
+        "has_audio": m.has_audio,
+    }
 
 
 def _sentence(text: str) -> str:
@@ -591,7 +700,19 @@ class _Handler(BaseHTTPRequestHandler):
                 raise ApiError(400, "Unknown picker.")
             if app.picker is None:
                 return self._json({"ok": True, "paths": [], "unsupported": True})
-            return self._json({"ok": True, "paths": app.picker(kind)})
+            return self._json({"ok": True, "paths": app.pick(kind)})
+        if parts == ["inspect"]:
+            paths = data.get("inputs", [])
+            if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
+                raise ApiError(400, "inputs must be a list of paths")
+            return self._json({"ok": True, **app.inspect([p for p in paths if p])})
+        if parts == ["prefs"]:
+            out_dir = data.get("out_dir")
+            if out_dir is not None and (not isinstance(out_dir, str) or not out_dir):
+                raise ApiError(400, "out_dir must be a path")
+            app.prefs.set(out_dir=out_dir)
+            app._caps_cache = None
+            return self._json({"ok": True})
         if parts == ["recent", "clear"]:
             app.recent.clear()
             app._caps_cache = None
