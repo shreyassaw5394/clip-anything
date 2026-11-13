@@ -22,9 +22,13 @@ WHY_WORDS = (
     ("loud_rel", 0.35, "a loud burst"),
     ("onset", 0.35, "a sudden sound"),
     ("motion", 0.35, "fast motion"),
+    ("voice_react", 0.5, "a voice reaction"),
     ("cut", 0.5, "quick cuts"),
     ("rms_db", 0.5, "sustained noise"),
+    ("stinger", 0.5, "a music hit"),
 )
+MAX_BRIEF = 300
+PRESET_NAMES = ("", "shooter", "racing", "sports", "horror", "story", "funny")
 
 
 @dataclass
@@ -39,6 +43,8 @@ class JobRequest:
     ai: bool = False
     ai_provider: str = "auto"  # auto | ollama | openai | anthropic
     bar: str = "normal"  # normal | low (lets quieter moments through)
+    preset: str = ""  # "" | shooter | racing | sports | horror | story | funny (the chips)
+    brief: str = ""  # "What are you looking for?" (AI runs only)
     force: bool = True  # overwrite clips that already exist (the server decides per re-run)
 
     @classmethod
@@ -62,6 +68,8 @@ class JobRequest:
         req.ai = bool(data.get("ai", False))
         req.ai_provider = str(data.get("ai_provider", "auto"))
         req.bar = str(data.get("bar", "normal"))
+        req.preset = str(data.get("preset") or "").strip().lower()
+        req.brief = " ".join(str(data.get("brief") or "").split())[:MAX_BRIEF]
         return req
 
     def problem(self) -> str | None:
@@ -82,6 +90,8 @@ class JobRequest:
             return "Unknown AI provider."
         if self.bar not in BARS:
             return "Unknown action bar."
+        if self.preset not in PRESET_NAMES:
+            return "Unknown preset."
         return None
 
     def default_out_dir(self) -> str:
@@ -103,9 +113,9 @@ class JobRequest:
         }
 
     def options(self):
-        from ..config import Options
+        from ..config import Options, preset_layer
 
-        return Options.from_layers(self.layers())
+        return Options.from_layers(preset_layer(self.preset), self.layers())
 
 
 def default_runner(target, opts, on_event, cancel, rerank=None):
@@ -148,8 +158,8 @@ class Job:
         provider, why = resolve_provider(AISettings(provider=self.request.ai_provider))
         if provider is None:
             return f"AI mode is not ready: {why}"
-        self._reranker = Reranker(provider, preflight().ffmpeg)
-        self.disclosure = provider.disclosure(self.request.count * 3)
+        self._reranker = Reranker(provider, preflight().ffmpeg, brief=self.request.brief)
+        self.disclosure = provider.disclosure(self.request.count * self._reranker.widen)
         self.ai_cloud = bool(getattr(provider, "host", ""))
         return None
 
@@ -277,6 +287,8 @@ class Job:
                     "why": why_line(c),
                     "title": (c.ai or {}).get("title") or c.title,
                     "hook": (c.ai or {}).get("hook"),
+                    "match": (c.ai or {}).get("match"),
+                    "matches": (c.ai or {}).get("matches"),
                     "post": post_text(c),
                 }
             )
@@ -296,6 +308,8 @@ class Job:
             "warnings": [f"{w.stage}: {w.message}" for w in r.warnings],
             "cached": any(s.status == "cached" for s in r.stages),
             "bar": self.request.bar,
+            "preset": self.request.preset,
+            "brief": (r.ai or {}).get("brief") or "",
         }
 
 
@@ -303,6 +317,8 @@ def why_line(clip) -> str:
     """One plain sentence from the components: what made this moment score."""
     comps = clip.components or {}
     parts = [word for key, floor, word in WHY_WORDS if comps.get(key, 0.0) >= floor][:2]
+    if comps.get("streak", 0) >= 2 and len(parts) < 2:
+        parts.append(f"{int(comps['streak'])} bursts in a row")
     speech = clip.speech or {}
     if speech.get("shouts"):
         parts.append("shouting")
@@ -316,6 +332,8 @@ def why_line(clip) -> str:
         text = ", ".join(parts[:-1]) + (" and " if len(parts) > 1 else "") + parts[-1]
     else:
         text = "above the action bar"
+    if comps.get("fade", 0.0) >= 0.5:
+        text += ", then a fade to black"
     text = text[0].upper() + text[1:]
     if clip.status == "failed":
         return f"Render failed: {clip.error or 'unknown error'}"
