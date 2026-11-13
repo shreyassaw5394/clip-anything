@@ -116,6 +116,12 @@ class AppServer:
         self.lock = threading.Lock()
         self._caps_cache: tuple[float, dict] | None = None
         self._install_lock = threading.Lock()
+        from ..gui import startup_notice
+
+        # packaged app started from a dmg / App Translocation / read-only volume: the UI shows
+        # this once, before any run. TODO(static): app.js should render caps.notice as a
+        # dismissable line under the header (not a blocking dialog).
+        self.notice = startup_notice()
         self.httpd = _Server(("127.0.0.1", port), _Handler, self)
         self.port = self.httpd.server_address[1]
         self.thread: threading.Thread | None = None
@@ -173,6 +179,8 @@ class AppServer:
             "max_count": MAX_COUNT,
             "recent": self.recent.load(),
             "last_out_dir": self.prefs.out_dir(),
+            "notice": self.notice,
+            "log_dir": str(_log_dir()),
         }
         self._caps_cache = (now, data)
         return data
@@ -459,6 +467,20 @@ SETUP_LABELS = {
 }
 
 
+def _log_dir() -> Path:
+    from ..crashlog import log_dir
+
+    return log_dir()
+
+
+def _crash(exc: BaseException, where: str) -> str:
+    """A handler that blew up: write the crash log, answer with its path. Never raises."""
+    from ..crashlog import write_crash_log
+
+    log = write_crash_log(exc, inputs=[], options={"request": where}, source="app-server")
+    return str(log) if log else ""
+
+
 def _size(p: Path) -> int:
     try:
         return p.stat().st_size
@@ -570,8 +592,21 @@ class _Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
-    def _error(self, status: int, message: str) -> None:
-        self._json({"ok": False, "error": message}, status)
+    def _error(self, status: int, message: str, log: str = "") -> None:
+        data = {"ok": False, "error": message}
+        if log:
+            data["log"] = log
+        self._json(data, status)
+
+    def _unexpected(self, exc: BaseException) -> None:
+        """A bug or a broken optional module inside a request: the UI gets a 500 with the log
+        path instead of a dropped connection (and the user a banner with "Open log")."""
+        log = _crash(exc, f"{self.command} {urlsplit(self.path).path}")
+        where = f" Details saved to {log}" if log else ""
+        try:
+            self._error(500, f"Unexpected problem.{where}", log)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
 
     def _guard(self, write: bool) -> bool:
         if not is_loopback_host(self.headers.get("Host")):
@@ -641,6 +676,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._error(exc.status, exc.message)
         except (BrokenPipeError, ConnectionResetError):
             pass
+        except Exception as exc:  # noqa: BLE001 - see _unexpected
+            self._unexpected(exc)
 
     def do_POST(self) -> None:  # noqa: N802
         if not self._guard(write=True):
@@ -658,6 +695,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._error(exc.status, exc.message)
         except (BrokenPipeError, ConnectionResetError):
             pass
+        except Exception as exc:  # noqa: BLE001 - see _unexpected
+            self._unexpected(exc)
 
     def _api_get(self, parts: list[str], query: dict) -> None:
         app = self.app
