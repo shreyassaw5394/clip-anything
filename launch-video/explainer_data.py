@@ -33,7 +33,11 @@ def main() -> int:
     n = int(next(iter(arrays.values())).size)
     hop = 0.5
     rep = json.load(open(report))
-    duration = float(rep["input"].get("duration_s") or n * hop) if isinstance(rep.get("input"), dict) else n * hop
+    duration = (
+        float(rep["input"].get("duration_s") or n * hop)
+        if isinstance(rep.get("input"), dict)
+        else n * hop
+    )
     sig = Signals(hop_s=hop, t0=0.0, n=n, duration_s=duration, arrays=arrays)
     opts = ScoringOptions()
     score, comps = action_score(sig, opts)
@@ -42,7 +46,15 @@ def main() -> int:
     ev_v = comps.get("ev_visual", np.zeros(n))
     ev = comps.get("evidence", np.zeros(n))
     card = comps.get("video.card", np.zeros(n))
-    clips = [{"start": c["start"], "end": c["end"], "score": c["score"], "evidence": c["components"]["evidence"]} for c in rep["clips"]]
+    clips = [
+        {
+            "start": c["start"],
+            "end": c["end"],
+            "score": c["score"],
+            "evidence": c["components"]["evidence"],
+        }
+        for c in rep["clips"]
+    ]
     # one real menu/lobby bump: the loudest window that the card factor marks down
     loud = np.nan_to_num(comps.get("audio.loud_rel", np.zeros(n)))
     inner = (np.arange(n) > 0.05 * n) & (np.arange(n) < 0.95 * n)
@@ -53,14 +65,27 @@ def main() -> int:
     if cand.size:
         i = int(cand[np.argmax(loud[cand])])
         bump = {"t": i * hop, "card": float(card[i]), "loud": float(loud[i])}
-    json.dump({
-        "duration_s": duration, "hop_s": hop, "n": n, "points": m, "bar": opts.min_evidence,
-        "audio": pool(np.nan_to_num(ev_a), m, "max"), "visual": pool(np.nan_to_num(ev_v), m),
-        "evidence": pool(np.nan_to_num(ev), m), "score": pool(np.nan_to_num(score), m),
-        "card": pool(np.nan_to_num(card), m, "max"), "clips": clips, "bump": bump,
-        "candidates_total": rep.get("candidates_total"),
-    }, open(out, "w"))
-    print(f"wrote {out}: {n} windows -> {m} points, {len(clips)} clips, bar {opts.min_evidence}, bump {bump}")
+    json.dump(
+        {
+            "duration_s": duration,
+            "hop_s": hop,
+            "n": n,
+            "points": m,
+            "bar": opts.min_evidence,
+            "audio": pool(np.nan_to_num(ev_a), m, "max"),
+            "visual": pool(np.nan_to_num(ev_v), m),
+            "evidence": pool(np.nan_to_num(ev), m),
+            "score": pool(np.nan_to_num(score), m),
+            "card": pool(np.nan_to_num(card), m, "max"),
+            "clips": clips,
+            "bump": bump,
+            "candidates_total": rep.get("candidates_total"),
+        },
+        open(out, "w"),
+    )
+    print(
+        f"wrote {out}: {n} windows -> {m} points, {len(clips)} clips, bar {opts.min_evidence}, bump {bump}"
+    )
     return 0
 
 
