@@ -16,6 +16,7 @@ from ..events import Event
 from ..gui import STAGE_LABELS, ProgressModel, captions_available, friendly_error
 
 LENGTHS = {"short": (15.0, 30.0), "normal": (15.0, 45.0), "long": (30.0, 60.0)}
+BARS = {"normal": None, "low": 0.3}  # action bar: None keeps the ScoringOptions default
 MAX_COUNT = 20
 WHY_WORDS = (
     ("loud_rel", 0.35, "a loud burst"),
@@ -37,6 +38,7 @@ class JobRequest:
     crop: str = "follow"  # follow | center
     ai: bool = False
     ai_provider: str = "auto"  # auto | ollama | openai | anthropic
+    bar: str = "normal"  # normal | low (lets quieter moments through)
     force: bool = True  # overwrite clips that already exist (the server decides per re-run)
 
     @classmethod
@@ -59,6 +61,7 @@ class JobRequest:
         req.crop = str(data.get("crop", "follow"))
         req.ai = bool(data.get("ai", False))
         req.ai_provider = str(data.get("ai_provider", "auto"))
+        req.bar = str(data.get("bar", "normal"))
         return req
 
     def problem(self) -> str | None:
@@ -77,6 +80,8 @@ class JobRequest:
             return "Unknown layout option."
         if self.ai_provider not in ("auto", "ollama", "openai", "anthropic"):
             return "Unknown AI provider."
+        if self.bar not in BARS:
+            return "Unknown action bar."
         return None
 
     def default_out_dir(self) -> str:
@@ -90,6 +95,7 @@ class JobRequest:
         want_captions = bool(self.captions and captions_available())
         lo, hi = LENGTHS[self.length]
         return {
+            "scoring": {"min_evidence": BARS[self.bar]},
             "clips": {"count": self.count, "min_s": lo, "max_s": hi},
             "render": {"out_dir": self.out_dir, "force": self.force},
             "speech": {"captions": want_captions, "yes": want_captions},
@@ -289,6 +295,7 @@ class Job:
             "timings": r.timings,
             "warnings": [f"{w.stage}: {w.message}" for w in r.warnings],
             "cached": any(s.status == "cached" for s in r.stages),
+            "bar": self.request.bar,
         }
 
 
