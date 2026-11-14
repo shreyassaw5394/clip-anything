@@ -5,6 +5,7 @@ main thread in both modes (pywebview's dialog, or tkinter when there is no windo
 from __future__ import annotations
 
 import importlib.util
+import os
 import queue
 import sys
 import threading
@@ -124,15 +125,44 @@ class WebviewPicker:
         return [str(p) for p in (res or [])]
 
 
+def _native_window_wanted(window: str) -> bool:
+    """`auto` means a native window where it is known to work. On Windows pywebview needs the
+    .NET bridge (pythonnet), which does not load from the packaged app, so `auto` opens the
+    browser there unless CLIP_ANYTHING_WEBVIEW=1 asks for the window anyway."""
+    if window == "webview":
+        return True
+    if window != "auto" or not webview_available():
+        return False
+    if sys.platform.startswith("win") and os.environ.get("CLIP_ANYTHING_WEBVIEW") != "1":
+        return False
+    return True
+
+
 def launch(*, window: str = "auto", port: int = 0, open_ui: bool = True) -> int:
-    """Run until the window closes (webview) or Ctrl-C / Quit (browser). Returns an exit code."""
-    use_webview = window == "webview" or (window == "auto" and webview_available())
+    """Run until the window closes (webview) or Ctrl-C / Quit (browser). Returns an exit code.
+    A native window that fails for any reason falls back to the browser instead of crashing."""
     stop = threading.Event()
     prefs = Prefs()
 
-    if use_webview:
-        import webview
+    if _native_window_wanted(window):
+        try:
+            return _launch_webview(prefs, port)
+        except Exception as exc:  # noqa: BLE001 - any window failure: the browser still works
+            if window == "webview":
+                raise
+            print(
+                f"The native window could not open ({type(exc).__name__}); "
+                "opening in your browser instead.",
+                flush=True,
+            )
 
+    return _launch_browser(prefs, port, open_ui, stop)
+
+
+def _launch_webview(prefs: Prefs, port: int) -> int:
+    import webview
+
+    if True:
         picker = WebviewPicker()
         server = AppServer(
             port=port, picker=picker, prefs=prefs, window="webview",
@@ -162,7 +192,10 @@ def launch(*, window: str = "auto", port: int = 0, open_ui: bool = True) -> int:
         finally:
             server.stop()
         return 0
+    return 0
 
+
+def _launch_browser(prefs: Prefs, port: int, open_ui: bool, stop: threading.Event) -> int:
     picker = MainThreadPicker()
     server = AppServer(port=port, picker=picker, prefs=prefs, window="browser", on_quit=stop.set)
     server.start()
