@@ -4,6 +4,8 @@ All notable changes to Clip Anything. Dates are the day the change landed.
 
 ## Unreleased
 
+- Racing and other constant-motion recordings no longer come back empty: a recording that moves and sounds the same all the way through is detected (`report.json` → `scoring.profile: continuous`) and scored for sudden changes inside the moving stretches (motion drops and jumps, a high-pitched impact over the drone) against the previous 12 seconds; `--preset racing` / the Racing & sports chip force it. Reason lines say "A sudden jolt", "An impact sound"
+- Never "Nothing stood out" when there are moments: if fewer than three clear the action bar, the recording's strongest moments are returned by its own scale with the note "No moment cleared the usual bar for this recording, so these are its strongest moments" (`below_bar_fallback`); static cards are still never picked, and Lower the bar stays available
 - Privacy and terms written down: `docs/privacy.md`, `docs/terms.md`, an About screen in the app (version, licences, privacy summary), a first-run line, GPL/LGPL texts for the bundled ffmpeg in the desktop app, and the same notices on the npm launcher, the agent skill and the release notes
 - The desktop app is a real product UI: drop zone with recent runs, one visible settings strip, a run screen with a live action-score curve and time estimate, a results grid of playable vertical clips with per-clip actions, a setup checklist with consent per install. Same page in a native window (`[app]` extra, pywebview) or the default browser; served from 127.0.0.1 with a per-launch token
 - `clip-anything app` opens it from the CLI; `clip-anything-gui` still works

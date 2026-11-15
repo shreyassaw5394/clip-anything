@@ -61,6 +61,11 @@ def synth_agree_video() -> Path:
 
 
 @pytest.fixture(scope="session")
+def synth_continuous_video() -> Path:
+    return ensure(FIXTURES, "continuous")
+
+
+@pytest.fixture(scope="session")
 def facecam_video(tmp_path_factory) -> Path:
     from synth_extra import build_facecam_video
 

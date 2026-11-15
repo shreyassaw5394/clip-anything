@@ -107,14 +107,37 @@ class ScoringOptions:
     streak_frac: float = 0.6
     streak_max_s: float = 60.0
     preset: str = ""  # name of the --preset applied (recorded in report.json)
+    # never empty (10-02): when fewer than min(count, fallback_min) candidates clear the bar,
+    # the top --count by file-relative score are returned instead (warning below_bar_fallback)
+    fallback_min: int = 3
+    # continuous recordings (10-02): racing, sports, flying. The whole frame moves all the time
+    # and the sound is a steady drone, so nothing stands out against a 5-minute baseline and the
+    # absolute bar (sharp AND loud) never fills. profile: auto = detect per file from the
+    # whole-file statistics below, standard, continuous. The continuous profile scores the
+    # DERIVATIVES inside moving stretches against a short baseline: a motion drop or jump
+    # (crash, spin, wall, reset) and a 3-8 kHz level jump over the drone (impact, screech).
+    profile: str = "auto"
+    cont_rms_mad_db: float = 2.5  # whole-file MAD of rms_db below this = flat loudness
+    cont_onset_p95: float = 0.3  # 95th percentile of onset below this = impacts are rare
+    cont_motion_med: float = 6.0  # median proxy motion at least this = the picture keeps moving
+    cont_window_s: float = 12.0  # the short baseline
+    cont_drive_motion: float = 8.0  # past-window median motion that counts as "moving"
+    cont_drop_ref: tuple[float, float] = (0.3, 0.8)  # relative motion drop ramp lo -> hi
+    cont_spike_ref: tuple[float, float] = (0.8, 2.5)  # relative motion jump ramp lo -> hi
+    cont_impact_ref: tuple[float, float] = (3.0, 10.0)  # hi-band dB over the baseline lo -> hi
+    cont_lone_cap: float = 0.6  # a jolt with no impact sound (a spin) can still clear the bar
+    cont_w_jolt: float = 1.0
+    cont_w_impact: float = 0.6  # measured: results chimes fill the band as much as impacts do
+    cont_w_agree: float = 0.2  # a jolt with no sound (most crashes in a PS2 F1 game) must rank
 
 
 # --preset / app chips: weight sets over the defaults (file < preset < CLI). Game-agnostic:
 # each names what the moments look like, not a title.
 PRESETS: dict[str, dict] = {
     "shooter": {"w_onset": 1.0, "w_motion": 0.8},
-    "racing": {"w_motion": 1.1, "w_loud": 0.9, "w_cut": 0.1, "ref_motion": 20.0},
-    "sports": {"w_loud": 1.2, "w_fade": 0.1, "lead_frac": 0.65},
+    # racing & sports: the recording moves all the time -> the continuous profile, always
+    "racing": {"profile": "continuous", "w_cut": 0.1},
+    "sports": {"profile": "continuous", "w_fade": 0.1, "lead_frac": 0.65},
     # calm but tense: a long low-level build-up then a burst -> longer pre-roll, lower onset bar
     "horror": {
         "lead_frac": 0.75,
@@ -140,7 +163,7 @@ PRESET_CHIPS: dict[str, str] = {
     "Fights": "shooter",
     "Funny": "funny",
     "Big plays": "sports",
-    "Crashes": "racing",
+    "Racing & sports": "racing",
     "Calm but tense": "horror",
 }
 

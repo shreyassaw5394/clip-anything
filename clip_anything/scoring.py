@@ -167,7 +167,123 @@ def evidence(sig: Signals, opts: ScoringOptions, gates: dict[str, float]) -> dic
     return out
 
 
-def action_score(sig: Signals, opts: ScoringOptions) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+def continuity(sig: Signals, opts: ScoringOptions) -> dict:
+    """Whole-file statistics that say whether this is a CONTINUOUS recording (racing, sports,
+    flying): the loudness hardly moves (rms_db MAD), sharp sounds are rare (onset p95) and the
+    picture keeps moving (median motion, share of windows moving). Measured on real footage:
+    an F1 longplay has MAD 1.4 dB / onset p95 0.04 / motion 13 / 79 % moving; a GT longplay
+    1.9 / 0.13 / 12 / 70 %; an FPS match 8.0 / 0.44 / 22; a 6 h campaign 5.1 / 0.20 / 15;
+    a turn-based RPG 3.5 / 0.30 / 0.8."""
+    rms, onset, motion = (
+        _raw(sig, k, np.nan) for k in ("audio.rms_db", "audio.onset", "video.motion")
+    )
+    out: dict = {
+        "continuous": False,
+        "rms_mad_db": None,
+        "onset_p95": None,
+        "motion_median": None,
+        "motion_frac": None,  # share of windows moving at least cont_drive_motion
+    }
+    if rms is not None and np.isfinite(rms).sum() > 4:
+        r = rms[np.isfinite(rms)]
+        out["rms_mad_db"] = round(float(np.median(np.abs(r - np.median(r)))), 3)
+    if onset is not None and np.isfinite(onset).sum() > 4:
+        out["onset_p95"] = round(float(np.percentile(onset[np.isfinite(onset)], 95.0)), 4)
+    if motion is not None and np.isfinite(motion).sum() > 4:
+        mm = motion[np.isfinite(motion)]
+        out["motion_median"] = round(float(np.median(mm)), 3)
+        out["motion_frac"] = round(float(np.mean(mm >= opts.cont_drive_motion)), 3)
+    flat_audio = (
+        out["rms_mad_db"] is not None
+        and out["onset_p95"] is not None
+        and out["rms_mad_db"] < opts.cont_rms_mad_db
+        and out["onset_p95"] < opts.cont_onset_p95
+    )
+    moving = (
+        out["motion_median"] is not None
+        and out["motion_median"] >= opts.cont_motion_med
+        and out["motion_frac"] >= 0.5
+    )
+    out["continuous"] = bool(flat_audio and moving)
+    return out
+
+
+def resolve_profile(opts: ScoringOptions, cont: dict) -> str:
+    """'continuous' when forced (--preset racing / sports, profile = continuous) or detected."""
+    if opts.profile == "continuous":
+        return "continuous"
+    if opts.profile == "auto" and cont.get("continuous"):
+        return "continuous"
+    return "standard"
+
+
+def _past(x: np.ndarray, size: int, kind: str) -> np.ndarray:
+    """Statistic over the `size` windows strictly BEFORE each index ([i - size, i - 1])."""
+    from scipy.ndimage import maximum_filter1d, median_filter, uniform_filter1d
+
+    f = {"median": median_filter, "max": maximum_filter1d, "mean": uniform_filter1d}[kind]
+    size = max(2, int(size))
+    y = f(x, size=size, mode="nearest", origin=size // 2 - 1)  # covers [i - size + 1, i]
+    return np.concatenate([y[:1], y[:-1]])
+
+
+def _ahead(x: np.ndarray, size: int) -> np.ndarray:
+    """Mean over [i, i + size - 1]."""
+    from scipy.ndimage import uniform_filter1d
+
+    size = max(2, int(size))
+    return uniform_filter1d(x, size=size, mode="nearest", origin=-(size // 2))
+
+
+def continuous_components(sig: Signals, opts: ScoringOptions) -> dict[str, np.ndarray]:
+    """Derivative signals 0..1 for a continuous recording, computed only inside MOVING stretches
+    (the past cont_window_s had sustained motion, no static card, no cut within 2 s) so that a
+    loading screen, a menu or a replay camera change cannot look like a crash:
+      video.jolt    = max(relative motion DROP: past 5 s mean vs next 2 s mean (a crash, a wall,
+                      a reset), relative motion JUMP over the past-window median (a spin, a
+                      hit)); a frame that freezes right after (pause menu) is not a jolt
+      audio.impact  = 3-8 kHz level over its rolling median (impact, screech, horn) - the
+                      engine drone sits below the band
+      drive         = the moving mask itself (1 inside)"""
+    hop = sig.hop_s
+    n = sig.n
+    out: dict[str, np.ndarray] = {}
+    motion = _raw(sig, "video.motion", 0.0)
+    w = max(2, int(round(opts.cont_window_s / hop)))
+    drive = np.ones(n, dtype=bool)
+    if motion is not None:
+        still = _raw(sig, "video.still", 0.0)
+        cut = _raw(sig, "video.cut", 0.0)
+        past_med = _past(motion, w, "median")
+        drive = past_med >= opts.cont_drive_motion
+        if still is not None:
+            drive &= _past(still, w, "max") < 0.6
+        if cut is not None:
+            from scipy.ndimage import maximum_filter1d
+
+            k = 2 * int(round(2.0 / hop)) + 1
+            drive &= ~(maximum_filter1d(cut, size=k, mode="nearest") > 0)
+        past5 = _past(motion, int(round(5.0 / hop)), "mean")
+        next2 = _ahead(motion, int(round(2.0 / hop)))
+        drop = _ramp((past5 - next2) / np.maximum(past5, 1.0), *opts.cont_drop_ref)
+        spike = _ramp((motion - past_med) / np.maximum(past_med, 1.0), *opts.cont_spike_ref)
+        jolt = np.maximum(drop, spike)
+        if still is not None:
+            frozen = _ahead(still, int(round(3.0 / hop))) > 0.9
+            jolt = np.where(frozen, 0.0, jolt)
+        out["video.jolt"] = np.where(drive, jolt, 0.0)
+    hi = _raw(sig, "audio.hi_db", np.nan)
+    if hi is not None and np.isfinite(hi).any():
+        hi = np.nan_to_num(hi, nan=float(np.nanmedian(hi)))
+        rel = hi - _rolling_median(hi, w)
+        out["audio.impact"] = np.where(drive, _ramp(rel, *opts.cont_impact_ref), 0.0)
+    out["drive"] = drive.astype(np.float64)
+    return out
+
+
+def action_score(
+    sig: Signals, opts: ScoringOptions, profile: str = "standard"
+) -> tuple[np.ndarray, dict[str, np.ndarray]]:
     """Return (score 0..1 per window, per-signal normalised+gated components).
     score = w_mean * weighted mean + w_max * max + w_agree * sqrt(audio * motion), where the
     agreement term degrades to the remaining group when one group is absent/uninformative;
@@ -177,18 +293,28 @@ def action_score(sig: Signals, opts: ScoringOptions) -> tuple[np.ndarray, dict[s
     comps: dict[str, np.ndarray] = {}
     weights: dict[str, float] = {}
     gates: dict[str, float] = {}
-    for name, wattr, fattr, eps in BASE_SIGNALS:
-        raw = sig.arrays.get(name)
-        w = float(getattr(opts, wattr))
-        if raw is None or raw.size != n or w <= 0:
-            continue
-        gate = informativeness(raw, float(getattr(opts, fattr)))
-        if gate <= 0:
-            continue
-        s = robust_normalise(raw, window, opts.z_soft, eps, opts.scale_frac) * gate
-        comps[name] = s
-        weights[name] = w
-        gates[name] = gate
+    cont: dict[str, np.ndarray] = {}
+    if profile == "continuous":
+        # derivatives against a short baseline, already 0..1 and relative: no z-scoring
+        cont = continuous_components(sig, opts)
+        for name, w in (("audio.impact", opts.cont_w_impact), ("video.jolt", opts.cont_w_jolt)):
+            if name in cont and w > 0 and float(cont[name].max()) > 0:
+                comps[name] = cont[name]
+                weights[name] = w
+                gates[name] = 1.0
+    else:
+        for name, wattr, fattr, eps in BASE_SIGNALS:
+            raw = sig.arrays.get(name)
+            w = float(getattr(opts, wattr))
+            if raw is None or raw.size != n or w <= 0:
+                continue
+            gate = informativeness(raw, float(getattr(opts, fattr)))
+            if gate <= 0:
+                continue
+            s = robust_normalise(raw, window, opts.z_soft, eps, opts.scale_frac) * gate
+            comps[name] = s
+            weights[name] = w
+            gates[name] = gate
     if not comps:
         return np.zeros(n), comps
     wsum = sum(weights.values())
@@ -213,8 +339,9 @@ def action_score(sig: Signals, opts: ScoringOptions) -> tuple[np.ndarray, dict[s
         agree = np.clip(agree, 0.0, 1.0)
     else:
         agree = groups[0]
-    wsum3 = opts.w_mean + opts.w_max + opts.w_agree
-    score = (opts.w_mean * base + opts.w_max * peak + opts.w_agree * agree) / max(wsum3, 1e-9)
+    w_agree = opts.cont_w_agree if profile == "continuous" else opts.w_agree
+    wsum3 = opts.w_mean + opts.w_max + w_agree
+    score = (opts.w_mean * base + opts.w_max * peak + w_agree * agree) / max(wsum3, 1e-9)
     card = card_score(sig, opts)
     if card is not None and opts.w_card > 0:
         # a sharp audio onset on a still screen is still an event (a shot while aiming);
@@ -241,8 +368,36 @@ def action_score(sig: Signals, opts: ScoringOptions) -> tuple[np.ndarray, dict[s
     comps["agree"] = agree
     score = extra_bonuses(score, sig, opts, comps)
     if opts.min_evidence > 0 or opts.w_evidence > 0:
-        comps.update(evidence(sig, opts, gates))
+        if profile == "continuous":
+            comps.update(continuous_evidence(cont, sig, opts))
+        else:
+            comps.update(evidence(sig, opts, gates))
     return np.clip(score, 0.0, 1.0), comps
+
+
+def continuous_evidence(
+    cont: dict[str, np.ndarray], sig: Signals, opts: ScoringOptions
+) -> dict[str, np.ndarray]:
+    """Absolute evidence for the continuous profile: the jolt and the impact are already
+    measured against fixed relative levels (cont_*_ref), so each is its own evidence (max over
+    +- evidence_s: a jolt is brief); both = cont_lone_cap * max + (1 - cap) * min."""
+    from scipy.ndimage import maximum_filter1d
+
+    k = 2 * max(1, int(round(opts.evidence_s / sig.hop_s))) + 1
+    out: dict[str, np.ndarray] = {}
+    if "audio.impact" in cont:
+        out["ev_audio"] = maximum_filter1d(cont["audio.impact"], size=k, mode="nearest")
+    if "video.jolt" in cont:
+        out["ev_visual"] = maximum_filter1d(cont["video.jolt"], size=k, mode="nearest")
+    if "ev_audio" in out and "ev_visual" in out:
+        a, v = out["ev_audio"], out["ev_visual"]
+        ev = opts.cont_lone_cap * np.maximum(a, v) + (1.0 - opts.cont_lone_cap) * np.minimum(a, v)
+    elif out:
+        ev = next(iter(out.values()))
+    else:
+        ev = np.zeros(sig.n)
+    out["evidence"] = np.clip(ev, 0.0, 1.0)
+    return out
 
 
 def extra_bonuses(
@@ -482,9 +637,15 @@ def select_candidates(
     count: int,
     min_s: float,
     max_s: float,
+    info: dict | None = None,
 ) -> tuple[list[Candidate], int, np.ndarray]:
-    """Full chain -> (top candidates by score, candidate count before NMS, smoothed score)."""
-    score, comps = action_score(sig, opts)
+    """Full chain -> (top candidates by score, candidate count before NMS, smoothed score).
+    `info` (optional dict) receives profile, continuity, cleared_bar, fallback."""
+    cont = continuity(sig, opts)
+    profile = resolve_profile(opts, cont)
+    if info is not None:
+        info.update({"profile": profile, "continuity": cont, "fallback": False, "cleared_bar": 0})
+    score, comps = action_score(sig, opts, profile)
     # the absolute bar needs both groups: a recording without audio (or without video) has
     # nothing to agree with, so it is ranked against itself only (the 02-02 behaviour)
     bar_on = opts.min_evidence > 0 and "ev_audio" in comps and "ev_visual" in comps
@@ -524,10 +685,12 @@ def select_candidates(
         # smoothed value for ordering plus the raw value at the peak: a 1 s burst must not
         # be flattened below the floor by the smoothing alone
         c_score = 0.5 * float(sm[p]) + 0.5 * float(score[p])
+        rel_score = c_score
         if bar_on:
             ev = float(comps["evidence"][p])
             c_score = c_score * ((1.0 - opts.w_evidence) + opts.w_evidence * ev)
         components = {k.split(".", 1)[-1]: round(float(v[p]), 4) for k, v in comps.items()}
+        components["rel_score"] = round(rel_score, 4)
         if len(chain) > 1:
             components["streak"] = float(len(chain))
         features = {k: round(float(v[p]), 4) for k, v in sig.arrays.items() if v.size == sig.n}
@@ -548,7 +711,20 @@ def select_candidates(
     # ranks within this file (a menu is not action because the rest of the file is quieter)
     n_cands = len(cands)
     if bar_on:
-        cands = [c for c in cands if c.components.get("evidence", 0.0) >= opts.min_evidence]
+        cleared = [c for c in cands if c.components.get("evidence", 0.0) >= opts.min_evidence]
+        if info is not None:
+            info["cleared_bar"] = len(cleared)
+        if len(cleared) < min(count, opts.fallback_min) and len(cands) > len(cleared):
+            # never empty: too few moments clear the bar on this recording, so return its
+            # strongest moments by FILE-RELATIVE score instead (never a static card), and say so
+            for c in cands:
+                c.components["cleared_bar"] = float(c in cleared)
+                c.score = c.components["rel_score"]
+            cands = [c for c in cands if c.components.get("card", 0.0) < 0.5]
+            if info is not None:
+                info["fallback"] = True
+        else:
+            cands = cleared
     top_score = max((c.score for c in cands), default=0.0)
     floor = max(opts.min_score, opts.min_score_rel * top_score)
     top = dedupe(cands, opts.overlap_frac, count + 1, floor)
@@ -562,4 +738,13 @@ def select_candidates(
             or c.peak_t > opts.zero_start_peak_s
             or c.score >= opts.zero_start_ratio * med
         ]
-    return top[:count], n_cands, sm
+    top = top[:count]
+    if (
+        info is not None
+        and info.get("fallback")
+        and all(c.components.get("cleared_bar", 1.0) >= 1.0 for c in top)
+    ):
+        # the relative floor left only moments that did clear the bar after all: the honest
+        # count stands and the "strongest moments" note would be wrong
+        info["fallback"] = False
+    return top, n_cands, sm

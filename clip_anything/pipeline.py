@@ -559,10 +559,12 @@ def run(
     if rerank is not None and int(getattr(rerank, "widen", 3)) > 3:
         # a brief: look further down the action order (5N, at most 40) for what was asked
         n_select = min(40, opts.clips.count * int(rerank.widen))
+    sel: dict = {}
     top, total, _sm = select_candidates(
-        sig, opts.scoring, n_select, opts.clips.min_s, opts.clips.max_s
+        sig, opts.scoring, n_select, opts.clips.min_s, opts.clips.max_s, info=sel
     )
     report.candidates_total = total
+    report.scoring = _scoring_summary(sel, opts)
     report.stages.append(Stage("score", "ok", round(time.time() - t0, 3), f"{total} candidates"))
     transcripts: dict = {}
     if speech_on and top:
@@ -626,18 +628,7 @@ def run(
             extra=curve_summary(_sm, sig.hop_s, top),
         ),
     )
-    if not top:
-        report.warnings.append(Warning("score", "no_peaks", "no action peaks found"))
-    elif len(top) < opts.clips.count:
-        report.warnings.append(
-            Warning(
-                "score",
-                "below_floor",
-                f"{len(top)} of {opts.clips.count} requested: only {len(top)} moments cleared "
-                f"the action bar {opts.scoring.min_evidence:.2f} (--count is a maximum, no "
-                f"filler clips; lower --min-score to get more)",
-            )
-        )
+    _score_warnings(report, top, sel, opts)
 
     out_dir = Path(opts.render.out_dir)
     report.out_dir = str(out_dir)
@@ -668,6 +659,40 @@ def run(
     out_dir.mkdir(parents=True, exist_ok=True)
     report.write(out_dir / "report.json")
     return report
+
+
+FALLBACK_TEXT = (
+    "No moment cleared the usual bar for this recording, so these are its strongest moments."
+)
+
+
+def _scoring_summary(sel: dict, opts: Options) -> dict:
+    """report.scoring: which profile scored the file and why (10-02)."""
+    return {
+        "profile": sel.get("profile", "standard"),
+        "preset": opts.scoring.preset,
+        "continuity": sel.get("continuity", {}),
+        "cleared_bar": sel.get("cleared_bar", 0),
+        "fallback": bool(sel.get("fallback", False)),
+        "min_evidence": opts.scoring.min_evidence,
+    }
+
+
+def _score_warnings(report: Report, top: list, sel: dict, opts: Options) -> None:
+    if not top:
+        report.warnings.append(Warning("score", "no_peaks", "no action peaks found"))
+    elif sel.get("fallback"):
+        report.warnings.append(Warning("score", "below_bar_fallback", FALLBACK_TEXT))
+    elif len(top) < opts.clips.count:
+        report.warnings.append(
+            Warning(
+                "score",
+                "below_floor",
+                f"{len(top)} of {opts.clips.count} requested: only {len(top)} moments cleared "
+                f"the action bar {opts.scoring.min_evidence:.2f} (--count is a maximum, no "
+                f"filler clips; lower --min-score to get more)",
+            )
+        )
 
 
 def _source_warnings(info: MediaInfo, caps: FFmpegCaps, report: Report) -> None:
@@ -928,6 +953,7 @@ def _run_many(
     speech_on = (opts.speech.captions or opts.speech.rank) and report.input["has_audio"]
     n_select = opts.clips.count * 3 if (speech_on and opts.speech.rank) else opts.clips.count
     _sm = np.zeros(0, dtype=np.float32)
+    sel: dict = {}
     if session.short_mode:
         top = _whole_file_candidates(session, sig, opts, n_select)
         total = len(session.sources)
@@ -937,9 +963,15 @@ def _run_many(
         # the intro/outro edge rule assumes one recording; a session's first/last 30 s are
         # ordinary gameplay of the first/last file (per-file edges: scoring's work)
         top, total, _sm = select_candidates(
-            sig, replace(opts.scoring, edge_s=0.0), n_select, opts.clips.min_s, opts.clips.max_s
+            sig,
+            replace(opts.scoring, edge_s=0.0),
+            n_select,
+            opts.clips.min_s,
+            opts.clips.max_s,
+            info=sel,
         )
     report.candidates_total = total
+    report.scoring = _scoring_summary(sel, opts)
     # never cross a file boundary; candidate times become local to their file
     where: dict[int, tuple] = {}
     for c in top:
@@ -1040,8 +1072,7 @@ def _run_many(
             ),
         ),
     )
-    if not top:
-        report.warnings.append(Warning("score", "no_peaks", "no action peaks found"))
+    _score_warnings(report, top, sel, opts)
 
     out_dir = Path(opts.render.out_dir)
     report.out_dir = str(out_dir)
