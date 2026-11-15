@@ -12,7 +12,7 @@ import numpy as np
 
 from .audio_signals import EXTRACTOR_VERSION, Signals
 from .cache import SignalCache
-from .config import Options
+from .config import Options, ScoringOptions
 from .cropplan import plan_crop
 from .errors import InputError, StageError
 from .events import Event, OnEvent, emit
@@ -564,7 +564,7 @@ def run(
         sig, opts.scoring, n_select, opts.clips.min_s, opts.clips.max_s, info=sel
     )
     report.candidates_total = total
-    report.scoring = _scoring_summary(sel, opts)
+    report.scoring = _scoring_summary(sel, opts, hint=rerank is None)
     report.stages.append(Stage("score", "ok", round(time.time() - t0, 3), f"{total} candidates"))
     transcripts: dict = {}
     if speech_on and top:
@@ -666,8 +666,38 @@ FALLBACK_TEXT = (
 )
 
 
-def _scoring_summary(sel: dict, opts: Options) -> dict:
-    """report.scoring: which profile scored the file and why (10-02)."""
+HINT_TEXT = (
+    "This kind of recording is hard to score from sound and motion alone. "
+    "Smarter picks (AI) looks at the frames and usually does better here."
+)
+
+
+def scoring_hint(
+    sel: dict, opts: ScoringOptions, asked: int = 0, ai_on: bool = False
+) -> dict | None:
+    """Should the result suggest the AI pass? One reason code, or None (10-04). Triggers, in
+    order: the run ended in the below-bar fallback; the continuous profile scored it (racing,
+    sports); the audio had almost no onsets AND fewer moments cleared the bar than were asked
+    (the sports / fighting pattern from 10-03; a quiet file whose few bursts fill the list is
+    fine). Nothing when the AI pass already ran: the hint would ask for what the user has."""
+    if ai_on:
+        return None
+    reason = None
+    if sel.get("fallback"):
+        reason = "below_bar_fallback"
+    elif sel.get("profile") == "continuous":
+        reason = "continuous_profile"
+    else:
+        p95 = (sel.get("continuity") or {}).get("onset_p95")
+        short = int(sel.get("cleared_bar", 0)) < int(asked)
+        if p95 is not None and p95 < opts.hint_onset_p95 and short:
+            reason = "few_onsets"
+    return {"reason": reason, "text": HINT_TEXT} if reason else None
+
+
+def _scoring_summary(sel: dict, opts: Options, hint: bool = True) -> dict:
+    """report.scoring: which profile scored the file and why (10-02), plus the Smarter-picks
+    hint (10-04; `hint=False` = the AI pass ran or cannot run here)."""
     return {
         "profile": sel.get("profile", "standard"),
         "preset": opts.scoring.preset,
@@ -675,6 +705,7 @@ def _scoring_summary(sel: dict, opts: Options) -> dict:
         "cleared_bar": sel.get("cleared_bar", 0),
         "fallback": bool(sel.get("fallback", False)),
         "min_evidence": opts.scoring.min_evidence,
+        "hint": scoring_hint(sel, opts.scoring, opts.clips.count, ai_on=not hint),
     }
 
 
@@ -971,7 +1002,7 @@ def _run_many(
             info=sel,
         )
     report.candidates_total = total
-    report.scoring = _scoring_summary(sel, opts)
+    report.scoring = _scoring_summary(sel, opts, hint=False)  # sessions: no AI pass yet
     # never cross a file boundary; candidate times become local to their file
     where: dict[int, tuple] = {}
     for c in top:

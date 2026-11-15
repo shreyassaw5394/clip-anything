@@ -98,6 +98,12 @@ def print_summary(console: Console, report: Report) -> None:
     console.print(table)
     for w in report.warnings:
         console.print(f"[yellow]! {w.stage}: {w.message}[/yellow]")
+    hint = (report.scoring or {}).get("hint")
+    if hint:
+        console.print(
+            f"[cyan]Tip: {hint['text']} Re-run with --ai (the analysis is saved, so it is "
+            "quick); `clip-anything setup` installs a local model if none is set up.[/cyan]"
+        )
     t = report.timings
     console.print(
         f"{len(report.ok_clips)}/{len(report.clips)} clips -> {report.out_dir}  "

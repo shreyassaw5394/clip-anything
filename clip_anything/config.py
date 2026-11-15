@@ -119,6 +119,10 @@ class ScoringOptions:
     profile: str = "auto"
     cont_rms_mad_db: float = 2.5  # whole-file MAD of rms_db below this = flat loudness
     cont_onset_p95: float = 0.3  # 95th percentile of onset below this = impacts are rare
+    # Smarter-picks hint (10-04): onset p95 below this = almost no sharp sounds, the kind of
+    # recording the sound+motion detector scores poorly (Madden 0.11, GTA free roam 0.11,
+    # GT1 0.13, F1 0.04 vs COD 0.44, BO2 0.20, Persona 0.30, Dead Space 0.16)
+    hint_onset_p95: float = 0.15
     cont_motion_med: float = 6.0  # median proxy motion at least this = the picture keeps moving
     cont_window_s: float = 12.0  # the short baseline
     cont_drive_motion: float = 8.0  # past-window median motion that counts as "moving"

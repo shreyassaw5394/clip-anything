@@ -59,7 +59,7 @@ Supported extensions: `.mp4 .mkv .mov .m4v .ts .m2ts .mts .webm .avi .flv .wmv`.
 
 ### Output
 
-`clips/<stem>_01_<mm-ss>.mp4` ... (1080x1920 H.264 + AAC, faststart) and `clips/report.json` with each clip's start, end, score, per-signal breakdown, crop keyframes, captions and every warning the run produced. Analysis signals are cached next to the video in `.clipanything/<id>/`, so a re-run with different weights or counts takes seconds.
+`clips/<stem>_01_<mm-ss>.mp4` ... (1080x1920 H.264 + AAC, faststart) and `clips/report.json` with each clip's start, end, score, per-signal breakdown, crop keyframes, captions and every warning the run produced. Its `scoring` block says which profile scored the file (`standard` or `continuous`), whether the below-bar fallback did the ranking, and a `hint` (`{reason, text}` or `null`): when the recording is the kind the sound-and-motion detector scores poorly (`below_bar_fallback`, `continuous_profile`, `few_onsets`), the CLI and the app suggest re-running with `--ai` / Smarter picks, which looks at the frames. Analysis signals are cached next to the video in `.clipanything/<id>/`, so a re-run with different weights or counts takes seconds.
 
 ## Config file
 
