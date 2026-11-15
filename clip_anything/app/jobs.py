@@ -318,6 +318,7 @@ class Job:
             "brief": (r.ai or {}).get("brief") or "",
             "profile": (r.scoring or {}).get("profile", "standard"),
             "fallback": bool((r.scoring or {}).get("fallback", False)),
+            "hint": (r.scoring or {}).get("hint"),  # {reason, text} or None (10-04)
         }
 
 

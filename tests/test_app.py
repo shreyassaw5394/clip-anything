@@ -184,6 +184,7 @@ def test_job_runs_streams_and_serves_clips(server):
 
     job_id, st = _run_job(s, {"inputs": [str(v)], "count": 2, "length": "short"})
     assert st["state"] == "done" and st["result"]["ok"] == 2
+    assert "hint" in st["result"]  # the Smarter-picks hint rides along ({reason, text} or None)
     clip = st["result"]["clips"][0]
     assert clip["file"] == "c1.mp4" and "loud burst" in clip["why"] and clip["post"]
     assert st["request"]["out_dir"] == str(tmp / "clips")  # default next to the recording

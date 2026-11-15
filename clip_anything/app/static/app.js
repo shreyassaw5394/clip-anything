@@ -152,8 +152,9 @@
       $("ai-note").textContent = "Every clip gets a title and a hook, and the picks get a second opinion.";
     } else if (!c.ai.ok) {
       $("ai-note").textContent = "Titles, hooks and a second opinion on the picks from a local model. Not set up yet: Set up installs Ollama and a model.";
-      $("ai").disabled = true;
     }
+    $("ai").disabled = !c.ai.ok;
+    if (!c.ai.ok) $("ai").checked = false;
     briefState();
     homeProblem();
     renderRecent(c.recent || []);
@@ -579,6 +580,17 @@
     if (r.input.duration_s) sub += " (" + length(r.input.duration_s) + ")";
     sub += ", in " + (secs < 60 ? secs + " s" : Math.round(secs / 60) + " min") + (r.cached ? " using the saved analysis" : "") + (r.kept ? " (" + r.kept + " unchanged from last time)" : "") + ".";
     $("results-sub").textContent = sub;
+    // the detector knows when it is weak (continuous profile, fallback, almost no onsets):
+    // one plain line and the one button that helps, re-run with the AI on or set it up
+    const hint = r.hint;
+    $("ai-hint").hidden = !hint;
+    if (hint) {
+      const ok = !!(state.caps && state.caps.ai && state.caps.ai.ok);
+      $("ai-hint-text").textContent = hint.text;
+      $("ai-hint-btn").textContent = ok ? "Turn on Smarter picks and re-run" : "Set up Smarter picks";
+      $("ai-hint-btn").dataset.mode = ok ? "run" : "setup";
+      $("ai-hint").dataset.reason = hint.reason;
+    }
     const notes = $("result-notes");
     notes.textContent = "";
     for (const w of (r.warnings || []).concat(job.warnings || [])) {
@@ -827,6 +839,10 @@
     $("rerun").addEventListener("click", () => { show("home"); $("count").focus(); });
     $("lower-bar").addEventListener("click", () => { document.querySelector('input[name=bar][value="low"]').checked = true; start(); });
     $("try-racing").addEventListener("click", () => { setPreset("racing"); start(); });
+    $("ai-hint-btn").addEventListener("click", () => {
+      if ($("ai-hint-btn").dataset.mode !== "run" || $("ai").disabled) { openSetup(); return; }
+      $("ai").checked = true; briefState(); start();  // same inputs, saved analysis: quick
+    });
     $("error-back").addEventListener("click", () => show("home"));
     $("error-setup").addEventListener("click", () => openSetup());
     $("about").addEventListener("click", () => show("about"));

@@ -10,11 +10,17 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const PKG = "clip-anything";
-// Until the PyPI release is live, uvx/pipx pull the tool from the tagged source. Set
-// CLIP_ANYTHING_SOURCE to override (a PyPI spec like "clip-anything==0.6.0", or a git URL).
+// uvx/pipx pull the Python tool from PyPI, pinned to the version this launcher was published
+// with (package.json "pythonPackageVersion", read at runtime; the npm "version" may move on its
+// own). CLIP_ANYTHING_SOURCE overrides: "git" = the matching GitHub tag, anything else is used
+// as the spec (a PyPI spec like "clip-anything==0.6.0", or a git URL).
+const PKG_JSON = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+const PY_VERSION = PKG_JSON.pythonPackageVersion || PKG_JSON.version;
+const GIT_SOURCE = `git+https://github.com/shreyassaw5394/clip-anything@v${PY_VERSION}`;
 const SOURCE =
-  process.env.CLIP_ANYTHING_SOURCE ||
-  "git+https://github.com/shreyassaw5394/clip-anything@v0.5.2";
+  process.env.CLIP_ANYTHING_SOURCE === "git"
+    ? GIT_SOURCE
+    : process.env.CLIP_ANYTHING_SOURCE || `${PKG}==${PY_VERSION}`;
 const IS_WIN = process.platform === "win32";
 
 function which(cmd) {
