@@ -2,7 +2,7 @@
 
 A thin launcher for the [Clip Anything](https://github.com/shreyassaw5394/clip-anything) Python CLI: long gameplay recording in, the top N vertical (9:16) highlight clips out, with a `report.json` that says why each moment was picked. Free, local, open source. Nothing is uploaded.
 
-This package contains no video code. Its only job is to find `uvx` (from [uv](https://docs.astral.sh/uv/)) or `pipx` on your PATH and run `uvx clip-anything <your arguments>`. If neither is installed it prints the install lines and exits.
+This package contains no video code. Its only job is to find `uvx` (from [uv](https://docs.astral.sh/uv/)) or `pipx` on your PATH and run `uvx clip-anything <your arguments>`. If neither is installed it prints the install lines and exits. It pins the Python package to the version in its `package.json` (`pythonPackageVersion`) from PyPI; set `CLIP_ANYTHING_SOURCE=git` to take the matching GitHub tag instead, or any other value to use it as the spec.
 
 ```
 npx clip-anything gameplay.mp4
