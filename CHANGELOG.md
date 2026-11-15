@@ -11,6 +11,11 @@ All notable changes to Clip Anything. Dates are the day the change landed.
 - `clip-anything app` opens it from the CLI; `clip-anything-gui` still works
 - Pipeline progress events carry a live audio level and the final score curve with the picked spans
 
+## 0.5.3 — 2026-11-15
+
+- When a recording is the kind the detector finds hard (racing, sports, fighting, free roam), the app and CLI say so and offer Smarter picks (AI), which looks at the frames
+- npm launcher installs the matching PyPI release
+
 ## 0.5.2 — 2026-11-15
 
 - Racing, sports and other constant-motion recordings: the tool notices when sound and motion are steady throughout and looks for sudden changes instead (crashes, spins, impacts, replay cuts); a "Racing & sports" chip forces it
