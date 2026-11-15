@@ -45,18 +45,6 @@ A desktop app for Windows and Mac is coming on the [Releases page](https://githu
 
 Drop, Make clips, play, pick, post. The same walk-through as a video: [16:9](https://shipatmidnight.dev/clip-anything/media/howto-16x9.mp4) or the [vertical version](https://shipatmidnight.dev/clip-anything/media/howto-reel.mp4).
 
-<details>
-<summary>Before Nov 15 (package not on PyPI yet)</summary>
-
-Until the package is published, run it straight from GitHub. Same thing, longer line:
-
-```
-uvx --from git+https://github.com/shreyassaw5394/clip-anything clip-anything my-session.mp4
-```
-
-Everywhere this page says `uvx clip-anything`, use that longer form instead.
-</details>
-
 Linux, pipx, captions, and other ways to install are in [docs/reference.md](docs/reference.md#install).
 
 ## Use it
