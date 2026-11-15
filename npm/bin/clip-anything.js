@@ -10,6 +10,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const PKG = "clip-anything";
+// Until the PyPI release is live, uvx/pipx pull the tool from the tagged source. Set
+// CLIP_ANYTHING_SOURCE to override (a PyPI spec like "clip-anything==0.6.0", or a git URL).
+const SOURCE =
+  process.env.CLIP_ANYTHING_SOURCE ||
+  "git+https://github.com/shreyassaw5394/clip-anything@v0.5.1";
 const IS_WIN = process.platform === "win32";
 
 function which(cmd) {
@@ -68,10 +73,10 @@ function main(argv) {
   }
 
   const uvx = which("uvx");
-  if (uvx) return run(uvx, [PKG, ...argv]);
+  if (uvx) return run(uvx, ["--from", SOURCE, PKG, ...argv]);
 
   const pipx = which("pipx");
-  if (pipx) return run(pipx, ["run", PKG, ...argv]);
+  if (pipx) return run(pipx, ["run", "--spec", SOURCE, PKG, ...argv]);
 
   const installed = which(PKG);
   if (installed && path.resolve(installed) !== path.resolve(__filename)) {
