@@ -9,6 +9,10 @@ All notable changes to Clip Anything. Dates are the day the change landed.
 - `clip-anything app` opens it from the CLI; `clip-anything-gui` still works
 - Pipeline progress events carry a live audio level and the final score curve with the picked spans
 
+## 0.5.1 — 2026-11-14
+
+- Windows: the app opens in your default browser (the native window needed a .NET bridge that failed on first launch); any window failure on any system now falls back to the browser instead of closing
+
 ## 0.5.0 — 2026-11-14
 
 - Tell it what you're looking for: quick chips (Fights, Funny, Big plays, Crashes, Calm but tense) that work without AI, and a free-text brief in AI mode that scores every moment on how well it matches and says what matched
