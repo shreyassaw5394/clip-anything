@@ -9,7 +9,7 @@ The defaults were tuned on two openly licensed recordings (public domain and CC 
 - A 40-minute Call of Duty 2 multiplayer match, 720p30, 19 labelled spans. Bursty FPS action.
 - A 74-minute Persona 3 opening, 480p60, 33 labelled spans. A turn-based RPG with almost no bursty action, chosen as the hard case.
 
-Two games is a small set. The scorer has no per-game code, so it should transfer, but it has not yet been scored on a third, unseen game.
+Two games is a small set. The scorer has no per-game code; on a 12-genre set of recordings it was never tuned on (open world, fighting, sports, horror, platformer, battle royale, card, racing) it ranks real action first on the GTA IV and GTA 5 story files and on the horror and card files, and fills the list with plain driving or presentation cards on free-roam, sports and fighting recordings. `python scripts/eval-matrix.py` prints the whole table from local labels.
 
 ## Two mechanisms do most of the work
 
@@ -39,7 +39,7 @@ Known misses: a cutscene explosion with music but no audio onset stays below the
 
 ## What has not been measured
 
-- A third game, or any game with a different action profile (racing, sports, fighting games).
+- Sports and fighting games: their audio has no gunfire-shaped onsets, so the action bar relies on the never-empty fallback and plays are not separated from presentation.
 - Captions and facecam detection on a real streamer VOD with a webcam (verified on fixtures and the two recordings only).
 - The `--vision` pass against a real Ollama model.
 - A human review of a batch of clips for "postable without edits".
