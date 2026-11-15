@@ -1,6 +1,4 @@
-# DISABLED: rename to publish.yml to enable. Nothing in this file runs while it has this name.
-#
-# One-time setup before enabling (owner only):
+# Enabled 2026-11-14. One-time setup on PyPI (owner only) before the first tag that should publish:
 #   1. On PyPI (and TestPyPI if wanted) open the project "clip-anything" > Publishing >
 #      "Add a new publisher" (or a "pending publisher" before the first upload):
 #        owner: shreyassaw5394   repository: clip-anything
@@ -8,7 +6,7 @@
 #   2. In GitHub repo Settings > Environments create "pypi"; add yourself as a required
 #      reviewer so a tag push still needs one click.
 #   3. Delete any PYPI_TOKEN / TESTPYPI_TOKEN secrets: trusted publishing needs none.
-#   4. Rename this file to publish.yml, commit, then `git tag v0.1.0 && git push origin v0.1.0`.
+#   4. Push a version tag (`git tag vX.Y.Z && git push origin vX.Y.Z`); the `pypi` environment needs one approval click.
 #
 # Releases are built once from the tag and uploaded with OIDC (no long-lived token).
 
