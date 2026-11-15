@@ -47,6 +47,8 @@ elif sys.platform == "darwin" and (ROOT / "assets" / "icon.icns").is_file():
 
 bundle_captions = os.environ.get("CLIP_ANYTHING_BUNDLE_CAPTIONS", "1") != "0"
 excludes = ["matplotlib", "PyQt5", "PyQt6", "PySide2", "PySide6", "IPython", "pytest"]
+if sys.platform == "win32":
+    excludes += ["webview", "clr", "pythonnet", "clr_loader"]
 hiddenimports = ["clip_anything.pipeline", "clip_anything.render", "clip_anything.speech",
                  "clip_anything.facecam", "clip_anything.captions", "clip_anything.vision",
                  "clip_anything.app.server", "clip_anything.app.launch", "clip_anything.setup_cmd",
@@ -54,6 +56,11 @@ hiddenimports = ["clip_anything.pipeline", "clip_anything.render", "clip_anythin
 # native window when the [app] extra (pywebview) is installed in the build env; otherwise the
 # bundle opens the default browser (gui.py decides at run time)
 try:
+    if sys.platform == "win32":
+        # pywebview on Windows needs the .NET bridge (pythonnet), which does not load from the
+        # packaged app (Python.Runtime.dll resolve error on first user run, 0.5.0); the app opens
+        # in the browser there instead, so keep the whole chain out of the bundle
+        raise ImportError("native window skipped on Windows builds")
     import webview  # noqa: F401
 
     hiddenimports += collect_submodules("webview")
