@@ -277,8 +277,60 @@ def continuous_components(sig: Signals, opts: ScoringOptions) -> dict[str, np.nd
         hi = np.nan_to_num(hi, nan=float(np.nanmedian(hi)))
         rel = hi - _rolling_median(hi, w)
         out["audio.impact"] = np.where(drive, _ramp(rel, *opts.cont_impact_ref), 0.0)
+    lumi = luminance_step(sig, opts)
+    if lumi is not None:
+        # a tunnel mouth or a results overlay changes every pixel at once: the motion jump
+        # (and the chime on the overlay) is the lighting, not an event
+        for key in ("video.jolt", "audio.impact"):
+            if key in out:
+                out[key] = out[key] * (1.0 - lumi)
+        out["video.lumi"] = lumi
     out["drive"] = drive.astype(np.float64)
     return out
+
+
+def luminance_step(sig: Signals, opts: ScoringOptions) -> np.ndarray | None:
+    """0..1 per window: how much the mean frame brightness steps across this moment (cont_lumi_s
+    after vs before, 2 s gap, relative to the brighter side, floor 32/255), +- 2 s. A tunnel
+    mouth in a racing game is 0.25-0.45, a race-classification overlay 0.35-0.75, a crash
+    0.04-0.13 (measured on the F1 2001 and Gran Turismo longplays)."""
+    from scipy.ndimage import maximum_filter1d
+
+    bright = _raw(sig, "video.bright", np.nan)
+    if bright is None or not np.isfinite(bright).any():
+        return None
+    bright = np.nan_to_num(bright, nan=float(np.nanmedian(bright)))
+    gap = max(1, int(round(2.0 / sig.hop_s)))
+    k = max(2, int(round(opts.cont_lumi_s / sig.hop_s)))
+    # means over [t - gap - k, t - gap) and (t + gap, t + gap + k]: a step that HOLDS (a tunnel,
+    # an overlay) counts; a light show flickering both ways inside the windows averages out
+    before = np.concatenate([np.repeat(bright[:1], gap), _past(bright, k, "mean")[:-gap]])
+    after = np.concatenate([_ahead(bright, k)[gap:], np.repeat(bright[-1:], gap)])
+    rel = np.abs(after - before) / np.maximum(np.maximum(before, after), 32.0)
+    step = _ramp(rel, *opts.cont_lumi_ref)
+    return maximum_filter1d(step, size=2 * gap + 1, mode="nearest")
+
+
+def cinematic(sig: Signals, opts: ScoringOptions) -> np.ndarray | None:
+    """0..1 per window: how cut-dense the +- cine_s neighbourhood is, ramp(cuts per minute,
+    cine_ref). Cutscenes, intro reels, studio shows and menu transitions cut every few seconds;
+    a game camera does not. With cine_voice_ref set, also needs a voice reaction nearby."""
+    from scipy.ndimage import maximum_filter1d, uniform_filter1d
+
+    cut = _raw(sig, "video.cut", 0.0)
+    if cut is None:
+        return None
+    k = 2 * max(1, int(round(opts.cine_s / sig.hop_s))) + 1
+    per_min = uniform_filter1d((cut > 0).astype(np.float64), size=k, mode="nearest") * (
+        60.0 / sig.hop_s
+    )
+    cine = _ramp(per_min, *opts.cine_ref)
+    lo, hi = opts.cine_voice_ref
+    if hi > lo:
+        voice = _raw(sig, "audio.voice_react", 0.0)
+        if voice is not None:
+            cine = cine * _ramp(maximum_filter1d(voice, size=k, mode="nearest"), lo, hi)
+    return cine
 
 
 def action_score(
@@ -351,6 +403,12 @@ def action_score(
             card = card * (1.0 - onset)
         score = score * (1.0 - opts.w_card * card)
         comps["video.card"] = card
+    cine = cinematic(sig, opts) if profile != "continuous" and opts.w_cine > 0 else None
+    if cine is not None:
+        # a cut-dense stretch is a cutscene, an intro reel or a studio show, not play: the
+        # candidate is demoted in select_candidates, per peak, so the curve (and every peak a
+        # battle with cut-ins has) stays exactly as before and only the ranking changes
+        comps["video.cine"] = cine
     cut = sig.arrays.get("video.cut")
     if cut is not None and cut.size == n and opts.w_cut > 0:
         from scipy.ndimage import maximum_filter1d
@@ -685,6 +743,8 @@ def select_candidates(
         # smoothed value for ordering plus the raw value at the peak: a 1 s burst must not
         # be flattened below the floor by the smoothing alone
         c_score = 0.5 * float(sm[p]) + 0.5 * float(score[p])
+        if "video.cine" in comps:
+            c_score = c_score * (1.0 - opts.w_cine * float(comps["video.cine"][p]))
         rel_score = c_score
         if bar_on:
             ev = float(comps["evidence"][p])

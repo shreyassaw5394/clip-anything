@@ -159,3 +159,23 @@ def test_fallback_returns_strongest_moments_with_a_warning(synth_lobby_video, tm
     codes = {w.code for w in report.warnings}
     assert ("below_bar_fallback" in codes) == report.scoring["fallback"]
     assert "no_peaks" not in codes
+
+
+def test_luminance_step_discounts_a_jolt_but_a_crash_keeps_it():
+    # two identical motion drops; the first coincides with the picture going dark for good
+    # (a tunnel mouth, a results overlay), the second happens in steady light (a crash)
+    sig = _drone_file(jolts=[300.0, 600.0])
+    bright = np.full(sig.n, 150.0, np.float32)
+    bright[int(300.0 / HOP) :] = 60.0
+    sig.arrays["video.bright"] = bright
+    cc = continuous_components(sig, ScoringOptions())
+    j, lumi = cc["video.jolt"], cc["video.lumi"]
+    assert lumi[int(300.0 / HOP)] > 0.9 and lumi[int(600.0 / HOP)] == 0.0
+    assert j[int(300.0 / HOP)] < 0.1 < 0.9 < j[int(600.0 / HOP)]
+    # a light show that flickers both ways inside the windows is not a step
+    sig2 = _drone_file(jolts=[300.0])
+    flicker = np.full(sig2.n, 150.0, np.float32)
+    flicker[int(290.0 / HOP) : int(310.0 / HOP) : 2] = 60.0
+    sig2.arrays["video.bright"] = flicker
+    cc2 = continuous_components(sig2, ScoringOptions())
+    assert cc2["video.lumi"][int(300.0 / HOP)] < 0.3 and cc2["video.jolt"][int(300.0 / HOP)] > 0.6

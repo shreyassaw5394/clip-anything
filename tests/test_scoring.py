@@ -181,3 +181,48 @@ def test_silent_file_keeps_motion_only_moments():
         abs(c.peak_t - t) < 3.0
         for c, t in zip(sorted(top[:2], key=lambda c: c.peak_t), (100.0, 300.0), strict=True)
     )
+
+
+def _with_cuts(sig, t0, t1, every_s=3.0, voice=True):
+    """Hard cuts every `every_s` between t0 and t1 with a voice reaction over them: a
+    cutscene, an intro reel, a studio show. voice=False: cuts alone (a battle with cut-ins)."""
+    cut = np.zeros(sig.n, dtype=np.float32)
+    vr = np.zeros(sig.n, dtype=np.float32)
+    a, b = int(t0 / HOP), int(t1 / HOP)
+    for t in np.arange(t0, t1, every_s):
+        cut[int(t / HOP)] = 1.0
+    if voice:
+        vr[a:b] = 0.8
+    sig.arrays["video.cut"] = cut
+    sig.arrays["audio.voice_react"] = vr
+    return sig
+
+
+def test_cut_dense_stretch_with_voice_ranks_below_continuous_action():
+    # two identical loud + whole-frame-motion events; the first sits inside a stretch that cuts
+    # every 3 s with dialogue over it (a cutscene), the second is one continuous camera (play)
+    sig = _with_cuts(
+        _real_like(duration=600.0, events=[(150.0, "both"), (450.0, "both")]), 120, 180
+    )
+    opts = ScoringOptions()
+    top, _, _ = select_candidates(sig, opts, count=2, min_s=15.0, max_s=45.0)
+    assert len(top) == 2, "the penalty demotes, it never removes a peak"
+    assert abs(top[0].peak_t - 450.0) < 5.0, [c.peak_t for c in top]
+    assert top[1].components["cine"] > 0.5 and top[0].components["cine"] == 0.0
+    # off switch: the two events tie again
+    top0, _, _ = select_candidates(sig, ScoringOptions(w_cine=0.0), count=2, min_s=15.0, max_s=45.0)
+    assert abs(top0[0].score - top0[1].score) < 0.05
+
+
+def test_cuts_without_voice_are_not_a_cutscene():
+    # a turn-based battle with attack cut-ins: cuts, nobody talking -> no demotion by default
+    sig = _with_cuts(
+        _real_like(duration=600.0, events=[(150.0, "both"), (450.0, "both")]), 120, 180, voice=False
+    )
+    top, _, _ = select_candidates(sig, ScoringOptions(), count=2, min_s=15.0, max_s=45.0)
+    assert len(top) == 2 and all(c.components["cine"] == 0.0 for c in top)
+    # cuts alone can be asked for
+    top1, _, _ = select_candidates(
+        sig, ScoringOptions(cine_voice_ref=(0.0, 0.0)), count=2, min_s=15.0, max_s=45.0
+    )
+    assert abs(top1[0].peak_t - 450.0) < 5.0 and top1[1].components["cine"] > 0.5
