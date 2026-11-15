@@ -129,6 +129,22 @@ class ScoringOptions:
     cont_w_jolt: float = 1.0
     cont_w_impact: float = 0.6  # measured: results chimes fill the band as much as impacts do
     cont_w_agree: float = 0.2  # a jolt with no sound (most crashes in a PS2 F1 game) must rank
+    # a global luminance step (tunnel entry/exit, a results overlay darkening the frame) moves
+    # every pixel without anything happening: a jolt or an impact on it is discounted by
+    # ramp(|mean brightness 2 s after - 2 s before| / brightness, lo -> hi) (10-03, genre pass)
+    cont_lumi_ref: tuple[float, float] = (0.2, 0.4)
+    cont_lumi_s: float = 4.0  # brightness means over this long on each side of a 2 s gap
+    # cinematics (10-03, genre pass): cutscenes, intro reels, studio shows and menu transitions
+    # cut every few seconds; gameplay is one continuous camera. Standard profile only:
+    # score *= 1 - w_cine * ramp(hard cuts per minute over +- cine_s, cine_ref lo -> hi); the
+    # cut bonus is damped the same way. Measured on 15 labelled recordings: duds carry 3-7
+    # cuts/min, gameplay 0-2. cine_voice_ref (lo, hi) additionally requires a voice reaction
+    # in the window (cutscene dialogue, commentary); (0, 0) = cuts alone. Measured: the gate
+    # keeps every Persona battle (cut-ins, no dialogue) and a scripted heist, same duds removed.
+    w_cine: float = 0.5
+    cine_ref: tuple[float, float] = (2.5, 6.0)
+    cine_s: float = 15.0
+    cine_voice_ref: tuple[float, float] = (0.1, 0.4)
 
 
 # --preset / app chips: weight sets over the defaults (file < preset < CLI). Game-agnostic:
