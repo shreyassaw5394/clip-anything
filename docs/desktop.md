@@ -49,8 +49,10 @@ file's SHA-256 against `SHA256SUMS.txt` on the release page.
 
 The app is the same tool as the command line, as a window. It runs a small local server on
 127.0.0.1 (a random port and a per-launch token, loopback only) and shows the page in a native
-window; with no native window available it opens in your default browser instead and the
-terminal says so.
+window on macOS. On Windows it opens in your default browser instead (since 0.5.1: the native
+window's .NET bridge did not load from the packaged app); keep the app's small window open while
+you use it, and set `CLIP_ANYTHING_WEBVIEW=1` if you want to try the native window anyway. On
+any system, a native window that fails to open falls back to the browser and says so.
 
 1. **Drop a recording** (or a folder of recordings: one session, clips never cross a file) on
    the page, or use **Choose a recording** / **Choose a folder**. Recent runs are listed below
