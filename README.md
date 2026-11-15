@@ -154,12 +154,13 @@ The full list of flags is in [docs/reference.md](docs/reference.md#all-options).
 - The 9:16 crop follows the action instead of staying centred
 - A `report.json` next to the clips with the time, score and reason for each one
 - Tell it what you're looking for: `--preset shooter|racing|sports|horror|story|funny` (or the chips in the app) leans the picks without AI; with `--ai`, `--ai-brief "funny fails"` scores every moment on how well it matches and says what matched
+- Racing, sports and other recordings that move and sound the same all the way through are detected and scored for sudden changes instead (a jolt, an impact, a stop); `--preset racing` forces it. When too few moments clear the action bar, the recording's strongest moments come back anyway, with a note saying so
 
 Want AI titles and smarter picks? Run `clip-anything setup`, then add `--ai`. Local Ollama by default, or your own OpenAI/Anthropic key; see [docs/ai-mode.md](docs/ai-mode.md).
 
 ## How it picks moments
 
-It listens for sudden loud sounds (shots, explosions, hits, shouting) and loudness jumps over what the recording sounded like a minute earlier. It watches for motion across the whole frame, scene cuts and flashes. A moment needs both the sound and the picture to spike; a loud menu sound on a still screen does not count. Each clip starts a bit before the peak so you see the build-up, and ends at a quiet point. A 30-second [explainer video](https://shipatmidnight.dev/clip-anything/media/explainer-16x9.mp4) draws this from the saved signals of a real match. Details and measured numbers are in [docs/benchmark.md](docs/benchmark.md).
+It listens for sudden loud sounds (shots, explosions, hits, shouting) and loudness jumps over what the recording sounded like a minute earlier. It watches for motion across the whole frame, scene cuts and flashes. A moment needs both the sound and the picture to spike; a loud menu sound on a still screen does not count. A recording that moves and sounds the same all the way through (racing, sports) is scored differently: inside the moving stretches it looks for sudden motion drops or jumps and a high-pitched impact over the engine drone, against the previous 12 seconds. Each clip starts a bit before the peak so you see the build-up, and ends at a quiet point. A 30-second [explainer video](https://shipatmidnight.dev/clip-anything/media/explainer-16x9.mp4) draws this from the saved signals of a real match. Details and measured numbers are in [docs/benchmark.md](docs/benchmark.md).
 
 ## Compared with other clippers
 

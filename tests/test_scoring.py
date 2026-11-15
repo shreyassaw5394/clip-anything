@@ -148,10 +148,21 @@ def test_evidence_needs_audio_and_motion():
 
 def test_bar_filters_candidates_and_zero_disables_it():
     sig = _real_like(events=[(100.0, "both"), (200.0, "audio"), (300.0, "motion"), (400.0, "menu")])
-    top, total, _ = select_candidates(sig, ScoringOptions(), count=10, min_s=15, max_s=45)
+    info: dict = {}
+    top, total, _ = select_candidates(
+        sig, ScoringOptions(fallback_min=0), count=10, min_s=15, max_s=45, info=info
+    )
     assert total >= 2
     assert len(top) == 1 and abs(top[0].peak_t - 100.0) < 2.0
     assert all(c.components["evidence"] >= 0.5 for c in top)
+    assert info["profile"] == "standard" and info["cleared_bar"] == 1 and not info["fallback"]
+    # never empty (10-02): fewer than min(count, 3) clear the bar -> the file's strongest
+    # moments by relative score come back, flagged, the real event still first
+    info = {}
+    top, _, _ = select_candidates(sig, ScoringOptions(), count=10, min_s=15, max_s=45, info=info)
+    assert info["fallback"] and len(top) >= 2 and abs(top[0].peak_t - 100.0) < 2.0
+    assert top[0].components["cleared_bar"] == 1.0
+    assert all(c.components["cleared_bar"] == 0.0 for c in top[1:])
     top, _, _ = select_candidates(
         sig, ScoringOptions(min_evidence=0.0), count=10, min_s=15, max_s=45
     )
