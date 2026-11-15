@@ -14,7 +14,7 @@ const PKG = "clip-anything";
 // CLIP_ANYTHING_SOURCE to override (a PyPI spec like "clip-anything==0.6.0", or a git URL).
 const SOURCE =
   process.env.CLIP_ANYTHING_SOURCE ||
-  "git+https://github.com/shreyassaw5394/clip-anything@v0.5.1";
+  "git+https://github.com/shreyassaw5394/clip-anything@v0.5.2";
 const IS_WIN = process.platform === "win32";
 
 function which(cmd) {

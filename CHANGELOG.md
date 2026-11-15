@@ -11,6 +11,12 @@ All notable changes to Clip Anything. Dates are the day the change landed.
 - `clip-anything app` opens it from the CLI; `clip-anything-gui` still works
 - Pipeline progress events carry a live audio level and the final score curve with the picked spans
 
+## 0.5.2 — 2026-11-15
+
+- Racing, sports and other constant-motion recordings: the tool notices when sound and motion are steady throughout and looks for sudden changes instead (crashes, spins, impacts, replay cuts); a "Racing & sports" chip forces it
+- Never an empty result: when no moment clears the usual bar, the recording's strongest moments come back, labelled as such
+- Measured across genres (open-world, shooter, RPG, racing, sports, fighting, horror, platformer); see docs/benchmark.md
+
 ## 0.5.1 — 2026-11-14
 
 - Windows: the app opens in your default browser (the native window needed a .NET bridge that failed on first launch); any window failure on any system now falls back to the browser instead of closing
