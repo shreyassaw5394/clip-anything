@@ -586,16 +586,24 @@
       if (total === 0 && /no action peaks/.test(w)) continue; // the empty state says it in plain words
       if (!Array.from(notes.children).some((c) => c.textContent === w)) notes.append(el("li", "", w));
     }
+    const continuous = r.profile === "continuous";
+    if (continuous && total > 0 && notes.children.length < 4) {
+      notes.append(el("li", "", "This recording moves and sounds the same all the way through, so the picks are sudden changes: a jolt, an impact, a stop."));
+    }
     const empty = $("empty-results");
     empty.hidden = total !== 0;
     $("grid-help").hidden = total === 0;
     if (total === 0) {
       const low = r.bar === "low";
+      const racing = r.preset === "racing" || r.preset === "sports";
       $("empty-title").textContent = low ? "Still nothing stood out." : "Nothing stood out.";
-      $("empty-text").textContent = low
+      $("empty-text").textContent = continuous && !racing
+        ? "This recording moves all the time, like racing or sports. The Racing & sports chip looks for jolts and impacts instead of bursts."
+        : low
         ? "Even the low bar found no burst of sound and motion together. A calm recording can be like that; a different stretch of play may do better."
         : "Try a lower bar: quieter moments get through.";
-      $("lower-bar").hidden = low;
+      $("try-racing").hidden = !(continuous && !racing);
+      $("lower-bar").hidden = low || (continuous && !racing);
     }
     const grid = $("grid");
     grid.textContent = "";
@@ -818,6 +826,7 @@
     $("open-folder").addEventListener("click", () => api("/api/jobs/" + state.jobId + "/open", { body: { what: "folder" } }).then(() => dockSay("Folder opened")).catch((e) => toast(e.message)));
     $("rerun").addEventListener("click", () => { show("home"); $("count").focus(); });
     $("lower-bar").addEventListener("click", () => { document.querySelector('input[name=bar][value="low"]').checked = true; start(); });
+    $("try-racing").addEventListener("click", () => { setPreset("racing"); start(); });
     $("error-back").addEventListener("click", () => show("home"));
     $("error-setup").addEventListener("click", () => openSetup());
     $("about").addEventListener("click", () => show("about"));

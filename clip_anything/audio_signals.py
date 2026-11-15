@@ -14,6 +14,8 @@ Raw signals (normalisation is scoring's job):
                  sustained like a shout. Cheap and approximate; a bonus, never a gate.
   audio.stinger  tonal onset 0..1 (finalize): a level jump with a near-tonal spectrum (a music
                  hit, a level-up chime), not broadband noise (shots, impacts)
+  audio.hi_db    level (dB) of the 3-8 kHz band, mean over the hop: impacts, tyre screech and
+                 collisions live here, an engine drone does not (continuous-recording profile)
 """
 
 from __future__ import annotations
@@ -23,9 +25,10 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-EXTRACTOR_VERSION = 2
+EXTRACTOR_VERSION = 3
 N_FFT = 1024
 HOP = 256
+HI_BAND_HZ = 3000.0  # audio.hi_db band: above the engine / music fundamentals
 
 
 @dataclass
@@ -62,7 +65,9 @@ class AudioExtractor:
         self.centroid: list[float] = []
         self.flat: list[float] = []
         self.mod: list[float] = []
+        self.hi_db: list[float] = []
         self._freqs = np.fft.rfftfreq(N_FFT, 1.0 / sample_rate).astype(np.float32)
+        self._hi_band = self._freqs >= HI_BAND_HZ
         self._prev_flux = 0.0
         self._hops_done = 0
 
@@ -128,6 +133,8 @@ class AudioExtractor:
         energy = lin.sum(axis=1) + 1e-9
         cen = float(((lin @ self._freqs) / energy * energy).sum() / energy.sum())
         self.centroid.append(cen)
+        hi = lin[:, self._hi_band]
+        self.hi_db.append(float(10.0 * np.log10(np.mean(hi * hi) + 1e-12)))
         k = int(np.argmax(flux_frames)) if flux_frames.size else 0
         spec = lin[min(k, lin.shape[0] - 1)][1:] + 1e-9
         self.flat.append(float(np.exp(np.mean(np.log(spec))) / np.mean(spec)))
@@ -150,6 +157,7 @@ class AudioExtractor:
             "audio.centroid": np.asarray(self.centroid[:n], dtype=np.float32),
             "audio.flat": np.asarray(self.flat[:n], dtype=np.float32),
             "audio.mod": np.asarray(self.mod[:n], dtype=np.float32),
+            "audio.hi_db": np.asarray(self.hi_db[:n], dtype=np.float32),
         }
 
 

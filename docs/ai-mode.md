@@ -51,7 +51,7 @@ text-only model). Each clip gets `ai.match`, `ai.matches` ("Matches: he trips on
 bounded to 300 characters and is quoted to the model as data, not instructions.
 
 In the app the same box sits under "What are you looking for?"; it needs the AI toggle on. The
-chips next to it (Fights, Funny, Big plays, Crashes, Calm but tense) are `--preset` weight sets and
+chips next to it (Fights, Funny, Big plays, Racing & sports, Calm but tense) are `--preset` weight sets and
 work without AI.
 
 ## Providers and what leaves your machine

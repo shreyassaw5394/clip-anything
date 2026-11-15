@@ -19,6 +19,8 @@ LENGTHS = {"short": (15.0, 30.0), "normal": (15.0, 45.0), "long": (30.0, 60.0)}
 BARS = {"normal": None, "low": 0.3}  # action bar: None keeps the ScoringOptions default
 MAX_COUNT = 20
 WHY_WORDS = (
+    ("jolt", 0.35, "a sudden jolt"),
+    ("impact", 0.35, "an impact sound"),
     ("loud_rel", 0.35, "a loud burst"),
     ("onset", 0.35, "a sudden sound"),
     ("motion", 0.35, "fast motion"),
@@ -314,6 +316,8 @@ class Job:
             "bar": self.request.bar,
             "preset": self.request.preset,
             "brief": (r.ai or {}).get("brief") or "",
+            "profile": (r.scoring or {}).get("profile", "standard"),
+            "fallback": bool((r.scoring or {}).get("fallback", False)),
         }
 
 
