@@ -24,10 +24,6 @@ jobs:
             artifact: windows-x86_64
           - os: macos-latest
             artifact: macos-arm64
-          - os: macos-15-intel
-            artifact: macos-x86_64
-            optional: true
-    continue-on-error: ${{ matrix.optional || false }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
