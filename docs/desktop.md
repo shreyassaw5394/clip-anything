@@ -8,7 +8,8 @@ captions are on (the checkbox says so).
 
 Downloads: the **Releases** page of the repository
 (`clip-anything-macos-arm64.dmg` / `.zip` for Apple silicon Macs, `clip-anything-windows-x86_64.zip`
-for Windows 10/11, `clip-anything-macos-x86_64.zip` for Intel Macs when that build is present).
+for Windows 10/11). Intel Macs: install from the command line instead (`uvx clip-anything`); a speech
+dependency has no Intel Mac wheel, so there is no Intel app build.
 
 From a source install the same app is `clip-anything app` (or `clip-anything-gui`); add the
 `[app]` extra (`uv tool install "clip-anything[app]"`) for the native window.
